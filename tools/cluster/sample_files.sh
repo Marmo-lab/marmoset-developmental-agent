@@ -9,7 +9,7 @@
 set -euo pipefail
 STRIDE="${1:-6}"
 RAW="${RAW_RECORDINGS:-/ems/elsc-labs/omer-d/Omer-Lab-Shared/data/experiments/AnimalRoomRecordings}"
-for d in $(ls -d "$RAW"/Rec_* | grep -v ultrasonic | sort | awk -v s="$STRIDE" 'NR%s==1'); do
+for d in $(ls -d "$RAW"/Rec_* | grep -v ultrasonic | sort | awk -v s="$STRIDE" '(NR-1)%s==0'); do
     # middle file of the folder, to avoid recorder start-up transients
     mapfile -t f < <(ls "$d"/*.WAV 2>/dev/null | sort)
     [ "${#f[@]}" -eq 0 ] && continue
