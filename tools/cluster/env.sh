@@ -16,6 +16,12 @@ export LD_LIBRARY_PATH="$PY_ROOT/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export PROJECT_DIR="${PROJECT_DIR:-$HOME/marmoset-developmental-agent}"
 export VENV_DIR="${VENV_DIR:-$HOME/venvs/marmoset311}"
 
+# Make the package importable. Running `python $PROJECT_DIR/tools/foo.py` puts
+# `tools/` on sys.path, not the repo root, so `import marmoset_developmental_agent`
+# fails inside batch jobs even though it works from an interactive shell sitting in
+# the repo. Setting PYTHONPATH makes both cases behave the same.
+export PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}"
+
 # Data roots (gmslm_audit/GMSLM_CODE_AUDIT.md S4). Read-only; never write here.
 export RAW_RECORDINGS=/ems/elsc-labs/omer-d/Omer-Lab-Shared/data/experiments/AnimalRoomRecordings
 export TALIA_FIRSTTRIAL=/ems/elsc-labs/omer-d/talia.sternberg/MonkeyPhones/segmentations_results/firstTrial
