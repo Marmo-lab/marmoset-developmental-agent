@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+venv/
+.venv*/
+env/
+
+# Run outputs (large, regenerable)
+outputs/
+
+# Read-only upstream code: nested git clones, vendored for reference only.
+# CLAUDE.md guardrail 4 forbids importing from these.
+references/
+
+# Audit artifacts: keep the report and the sample list (small, authoritative);
+# exclude the 343 MB file index and the 19 MB mirror of Talia's code.
+gmslm_audit/index/
+gmslm_audit/code_mirror/
+
+# Raw and sampled audio never belongs in git
+*.WAV
+*.wav
+*.pkl
+*.npy
+*.pt
+*.pth
+*.km
+*.units
+gmslm_sample/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

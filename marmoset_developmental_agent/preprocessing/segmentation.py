@@ -1,0 +1,223 @@
+"""Call extraction and 10 s chunking at 16 kHz (GmSLM Appendix A.1-A.2).
+
+Call detection groups consecutive vocal-active STFT frames (see ``filter_5khz.py``).
+Gaps shorter than ``merge_gap_s`` are bridged, so twitter syllables form one call;
+runs shorter than ``min_run_duration_s`` are dropped; boundaries are padded by
+``boundary_pad_s``; and a run survives only if its duration lies in
+``[min_call_duration_s, max_call_duration_s]`` and it passes the two shape rejections
+ported from Talia's ``filter_calls``. The paper's "calls are 0.25-4 s" is the rounded
+form of the code's 0.2322-4 s; we follow the code (audit S7, tier A).
+
+Chunking follows GmSLM: each chunk is exactly ``chunk_duration_s`` (10 s) at 16 kHz
+and packs "as many marmoset calls as possible". A chunk starts just before an
+uncovered call and spans 10 s. Every call that ends inside the window is annotated
+in it, and the next chunk starts at the first call that did not fit. Inter-call
+gaps are kept, not silenced.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+from dataclasses import dataclass, field
+from typing import List, Optional, Sequence, Tuple
+
+import numpy as np
+
+from marmoset_developmental_agent.config.agent_config import PreprocessingConfig
+from marmoset_developmental_agent.preprocessing.filter_5khz import FrameActivity
+
+
+@dataclass
+class CallSegment:
+    """A detected (or annotated) call, in seconds. Labels are optional (mock / PHEEDB only)."""
+
+    start_s: float
+    end_s: float
+    call_type: Optional[str] = None
+    caller_id: Optional[int] = None
+    receiver_id: Optional[int] = None
+
+    @property
+    def duration_s(self) -> float:
+        return self.end_s - self.start_s
+
+
+@dataclass
+class Chunk:
+    """A fixed-length 16 kHz training segment with call boundaries relative to its start."""
+
+    waveform: Optional[np.ndarray]  # (chunk_samples,) float32; None if stored on disk
+    sample_rate: int
+    recording_id: str
+    start_time: dt.datetime  # absolute wall-clock time of sample 0
+    offset_s: float  # offset of sample 0 within its recording
+    calls: List[CallSegment] = field(default_factory=list)
+    path: Optional[str] = None
+    recording_day: Optional[int] = None
+
+    def audio(self) -> np.ndarray:
+        if self.waveform is not None:
+            return self.waveform
+        if self.path is None:
+            raise ValueError("Chunk has neither an in-memory waveform nor a path")
+        import soundfile as sf
+
+        wav, _ = sf.read(self.path, dtype="float32")
+        return wav
+
+    @property
+    def num_samples(self) -> int:
+        return len(self.audio())
+
+
+def _active_runs(activity: FrameActivity, cfg: PreprocessingConfig) -> List[Tuple[int, int]]:
+    """Inclusive (start, end) frame indices of active runs, bridging short gaps.
+
+    Gaps up to ``merge_gap_s`` are bridged (so twitter syllables form one call) and runs
+    shorter than ``min_run_duration_s`` are dropped -- Talia's 4-frame gap / 2-frame
+    minimum, expressed in seconds (audit S3.1 step 3g).
+    """
+    idx = np.flatnonzero(activity.active)
+    if idx.size == 0:
+        return []
+    max_gap = cfg.to_frames(cfg.merge_gap_s)
+    breaks = np.flatnonzero(np.diff(idx) > max_gap + 1)
+    starts = np.concatenate([[idx[0]], idx[breaks + 1]])
+    ends = np.concatenate([idx[breaks], [idx[-1]]])
+    min_frames = cfg.to_frames(cfg.min_run_duration_s)
+    return [(int(s), int(e)) for s, e in zip(starts, ends) if (e - s + 1) > min_frames]
+
+
+def _rejected_by_shape(
+    start: int, end: int, activity: FrameActivity, cfg: PreprocessingConfig
+) -> bool:
+    """Talia's two ``filter_calls`` shape rejections (audit S3.1 step 3h).
+
+    A run is rejected if its bandwidth crosses the ``bandwidth_crossing_hz`` line too
+    often (flickery, noise-like) or if ``freq_range`` jumps by more than
+    ``max_freq_range_jump_hz`` inside ``freq_range_jump_window_s`` (clicks, transients).
+    Only applies to the ``"talia"`` feature path, which populates these fields.
+    """
+    if activity.bandwidth_bins is None or activity.freq_range_hz is None:
+        return False
+    bw_hz = activity.bandwidth_bins[start : end + 1] * cfg.bandwidth_bin_width_hz
+    above = bw_hz > cfg.bandwidth_crossing_hz
+    if int(np.count_nonzero(np.diff(above.astype(np.int8)))) >= cfg.max_bandwidth_crossings:
+        return True
+    fr = activity.freq_range_hz[start : end + 1]
+    w = max(1, cfg.to_frames(cfg.freq_range_jump_window_s))
+    for i in range(len(fr)):
+        window = fr[i : i + w + 1]
+        if window.size > 1 and (window.max() - window.min()) > cfg.max_freq_range_jump_hz:
+            return True
+    return False
+
+
+def activity_to_calls(activity: FrameActivity, cfg: PreprocessingConfig) -> List[CallSegment]:
+    """Group active frames into calls and apply the duration and shape rejections."""
+    calls: List[CallSegment] = []
+    for s, e in _active_runs(activity, cfg):
+        # Frame centres -> approximate onset/offset (+-hop/2 around the run), then pad.
+        t0 = activity.frame_times_s[s] - activity.hop_s / 2 - cfg.boundary_pad_s
+        t1 = activity.frame_times_s[e] + activity.hop_s / 2 + cfg.boundary_pad_s
+        t0 = max(0.0, t0)
+        if not cfg.min_call_duration_s <= (t1 - t0) <= cfg.max_call_duration_s:
+            continue
+        if _rejected_by_shape(s, e, activity, cfg):
+            continue
+        calls.append(CallSegment(float(t0), float(t1)))
+    return calls
+
+
+def chunk_recording(
+    audio_16k: np.ndarray,
+    calls: Sequence[CallSegment],
+    cfg: PreprocessingConfig,
+    recording_id: str,
+    start_time: dt.datetime,
+    recording_day: Optional[int] = None,
+) -> List[Chunk]:
+    """Greedily pack calls into non-overlapping ``chunk_duration_s`` windows."""
+    sr = cfg.target_sample_rate
+    n_chunk = int(round(cfg.chunk_duration_s * sr))
+    calls = sorted(calls, key=lambda c: c.start_s)
+    chunks: List[Chunk] = []
+    i = 0
+    rec_len_s = len(audio_16k) / sr
+    while i < len(calls):
+        c0 = max(0.0, calls[i].start_s - cfg.chunk_pre_pad_s)
+        if chunks:  # never overlap the previous chunk
+            c0 = max(c0, chunks[-1].offset_s + cfg.chunk_duration_s)
+        c1 = c0 + cfg.chunk_duration_s
+        inside: List[CallSegment] = []
+        j = i
+        while j < len(calls) and calls[j].end_s <= c1:
+            if calls[j].start_s >= c0:
+                c = calls[j]
+                inside.append(CallSegment(c.start_s - c0, c.end_s - c0, c.call_type, c.caller_id, c.receiver_id))
+            j += 1
+        if j == i:  # call starts in window but overruns it -> skip it
+            j = i + 1
+        i = j
+        if len(inside) < cfg.min_calls_per_chunk or c0 >= rec_len_s:
+            continue
+        s0 = int(round(c0 * sr))
+        wav = audio_16k[s0 : s0 + n_chunk]
+        if len(wav) < n_chunk:
+            wav = np.pad(wav, (0, n_chunk - len(wav)))
+        chunks.append(
+            Chunk(
+                waveform=wav.astype(np.float32),
+                sample_rate=sr,
+                recording_id=recording_id,
+                start_time=start_time + dt.timedelta(seconds=c0),
+                offset_s=c0,
+                calls=inside,
+                recording_day=recording_day,
+            )
+        )
+    return chunks
+
+
+def label_calls_from_annotations(
+    detected: Sequence[CallSegment], annotations: Sequence[CallSegment], min_overlap: float = 0.5
+) -> List[CallSegment]:
+    """Copy labels from ground-truth annotations onto detected calls (max-overlap match).
+
+    Used only when labels exist (synthetic data, PHEEDB). A detected call gets a label
+    when its overlap with the best annotation covers at least ``min_overlap`` of the
+    shorter of the two.
+    """
+    out: List[CallSegment] = []
+    for d in detected:
+        best, best_ov = None, 0.0
+        for a in annotations:
+            ov = min(d.end_s, a.end_s) - max(d.start_s, a.start_s)
+            if ov > best_ov:
+                best, best_ov = a, ov
+        if best is not None and best_ov >= min_overlap * min(d.duration_s, best.duration_s):
+            out.append(CallSegment(d.start_s, d.end_s, best.call_type, best.caller_id, best.receiver_id))
+        else:
+            out.append(CallSegment(d.start_s, d.end_s))
+    return out
+
+
+def detection_scores(
+    detected: Sequence[CallSegment], annotations: Sequence[CallSegment], min_overlap: float = 0.5
+) -> dict:
+    """Precision / recall of call detection (GmSLM reports P=0.975, R=0.78)."""
+
+    def matched(x: CallSegment, pool: Sequence[CallSegment]) -> bool:
+        return any(
+            (min(x.end_s, p.end_s) - max(x.start_s, p.start_s)) >= min_overlap * min(x.duration_s, p.duration_s)
+            for p in pool
+        )
+
+    tp_d = sum(matched(d, annotations) for d in detected)
+    tp_a = sum(matched(a, detected) for a in annotations)
+    return {
+        "precision": tp_d / max(1, len(detected)),
+        "recall": tp_a / max(1, len(annotations)),
+        "n_detected": len(detected),
+        "n_annotated": len(annotations),
+    }

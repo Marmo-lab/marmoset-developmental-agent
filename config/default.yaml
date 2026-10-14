@@ -1,0 +1,130 @@
+# Marmoset Developmental Agent: paper-scale configuration.
+# Any key omitted here keeps the default in marmoset_developmental_agent/config/agent_config.py.
+# Usage:  python run_pipeline.py --config config/default.yaml
+#
+# Provenance tags: [GmSLM] = Sternberg et al. 2025 (paper + appendix; code not public)
+#                  [1kd]   = references/hasson_dev (hassonlab/1kd_learning_model)
+#                  [talia] = recovered from her working tree, see gmslm_audit/GMSLM_CODE_AUDIT.md
+
+seed: 0
+device: auto
+output_dir: outputs/default
+
+data:
+  # CSV with columns path,start_time[,recording_id]  (start_time ISO-8601, e.g. 2024-03-01T08:00:00)
+  recordings_manifest: null        # TODO: path to COLONYDB recordings manifest
+  chunk_manifest: null             # or: a manifest.tsv exported by a previous run (skips preprocessing)
+  export_dir: null                 # where to write chunk WAVs + manifest.tsv + day_sizes.json
+  eval_holdout_days: 7
+
+preprocessing:                     # [GmSLM] A.1-A.2, reconciled with [talia] via gmslm_audit/
+  target_sample_rate: 16000        # [GmSLM]
+  detection_sample_rate: 22050     # [talia] librosa's default resample, not the native 48 kHz
+  highpass_cutoff_hz: 5000.0       # [GmSLM] + [talia]
+  highpass_order: 5                # [talia] butter(5) + filtfilt; was 8 before the audit
+  n_fft: 2048                      # [GmSLM]; [talia] librosa default, never set explicitly
+  hop_length: 512                  # [GmSLM]; [talia] librosa default
+  highpass_training_audio: false   # [talia] she filtered for detection only, wrote unfiltered slices
+  frame_features: talia            # talia (validate against her call_indicies.pkl) | spectral (ours)
+  # "talia" feature path -- segment_processor.py constants
+  amp_threshold: 0.02
+  min_bandwidth_hz: 3000.0
+  max_bandwidth_hz: 11000.0
+  bandwidth_bin_width_hz: 1000.0
+  narrowband_max_bins: 6
+  noise_merge_gap_s: 0.4644        # 20 frames; [GmSLM] rounds the noise rule to 0.5 s / 2 s
+  noise_min_duration_s: 0.4644
+  noise_max_duration_s: 1.8576
+  bandwidth_crossing_hz: 1000.0
+  max_bandwidth_crossings: 3
+  max_freq_range_jump_hz: 2000.0
+  freq_range_jump_window_s: 0.4644
+  boundary_pad_s: 0.02268          # +-500 samples at 22050 Hz
+  # "spectral" feature path (ours) -- calibrate against hand labels, not yet tuned
+  bin_energy_threshold_db: 12.0
+  min_active_bin_fraction: 0.005
+  max_active_bin_fraction: 0.35
+  min_spectral_variance_db2: 20.0
+  # shared run grouping and duration limits
+  merge_gap_s: 0.0929             # 4 frames
+  min_run_duration_s: 0.0697      # 2 frames
+  min_call_duration_s: 0.2322     # 10 frames; [GmSLM] rounds this to 0.25 s
+  max_call_duration_s: 4.0        # [GmSLM] + [talia], exact agreement
+  chunk_duration_s: 10.0          # [GmSLM] + [talia]
+
+exposure:                          # [1kd] data_preparation/data_examples/daily_hours_per_month.json
+  hours_per_day_by_period: [2, 2, 2, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8]
+  days_per_period: 30              # OPEN QUESTION: marmoset developmental time-scale (infancy ~ first 2-3 months)
+  day_assignment: exposure
+
+encoder:
+  active: dinosr                   # dinosr (developmental, learns online) | hubert (GmSLM, frozen)
+  hubert:                          # [GmSLM] 3.2, A.3
+    pretrained_path: null          # TODO: HF-converted marmoset HuBERT (see audit S3.4 / open question 3)
+    layer: 1                       # [GmSLM] 1-based; her code's three signals disagree (6 / 9 / 12)
+    n_clusters: 50                 # [GmSLM] + [talia]
+    kmeans_batch_size: 5000        # [talia] MiniBatchKMeans default; paper says 10000
+    kmeans_n_init: 20              # [GmSLM] + [talia]
+    kmeans_fit_fraction: 0.5       # [GmSLM]; [talia] hard-coded 5-of-10 shards
+    # Marmoset adaptation = HuBERT pretraining from scratch, not CTC fine-tuning
+    # (audit S3.4). The paper's 8% / 3.5e-3 are decimal-point typos; we take [talia].
+    mask_prob: 0.80                # [talia]; paper says 8%
+    mask_length: 10                # [GmSLM] + [talia]
+    pretrain_lr: 0.00035           # [talia]; paper says 3.5e-3
+    pretrain_max_update: 150000    # [GmSLM]; her configs show 1.6M / 400k
+    pretrain_warmup_updates: 40000 # [talia]
+  dinosr:                          # [1kd] model_training_config/default.yaml
+    embed_dim: 768
+    num_layers: 12
+    codebook_size: 512             # train.sh example: CODEBOOK_SIZE=512
+    average_top_k_layers: 8
+    layer_for_tokens: 9            # 0-based (official convention) -> 10th layer
+    codebook_decay: 0.9
+    mask_prob: 0.8
+    mask_length: 10
+    ema_decay: 0.999
+    ema_end_decay: 0.9999
+    ema_anneal_end_step: 40000
+    lr: 1.0e-4
+
+decoder:                           # [GmSLM] A.3 transformer_lm_big ([1kd] uses 12 x 768 / 3072 / 12 heads)
+  embed_dim: 1024
+  num_layers: 12
+  num_heads: 16
+  ffn_dim: 4096
+  dropout: 0.1
+  max_positions: 3072
+
+training:
+  num_days: null                   # null -> all days except data.eval_holdout_days
+  batch_size: 22                   # [1kd] train.sh example
+  replay:
+    passes_per_day: 25             # X  ([1kd] DATASET_CYCLE_REPEATS=25; spec range 25-30)
+    kernel: exponential            # exponential (spec) | inverse_recency (official 1kd)
+    decay_lambda: 0.1
+    size_weighted: false           # official 1kd: true
+    include_current_day: true
+  decoder_lr:                      # [1kd] LM_LOSS_MULTIPLIER="sigmoid-279_000-0.0003-0.000001"
+    lr_max: 5.0e-4                 # [GmSLM] uLM peak LR (appendix typo "5e-45")
+    t_p: 279000
+    k: 0.0003
+    floor: 1.0e-6
+    unit: step
+  checkpoint_every_days: 7         # [1kd] dataset_save_cycle_every: 7 (weekly)
+  log_every_steps: 500
+
+vocoder:                           # [GmSLM] U2V, Polyak et al. 2021 unit HiFi-GAN
+  checkpoint_path: null            # TODO: trained marmoset unit vocoder
+  upsample_rates: [5, 4, 4, 2, 2]
+  upsample_kernel_sizes: [11, 8, 8, 4, 4]
+
+evaluation:
+  score_reduction: mean
+  eval_every_days: 7
+  max_eval_chunks: 2000
+  lexicon_smooth_factor: 0.5       # [1kd] analysis/cli/extract_word_dictionary.sh
+  lexicon_confidence: 0.05
+  lexicon_patience: 1.0
+  lexicon_stability: -0.25
+  lexicon_min_coverage: 0.9
+  probe_epochs: 30                 # [talia] submit_classifier.sh; [GmSLM] A.5 says 20

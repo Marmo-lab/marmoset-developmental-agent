@@ -1,0 +1,35 @@
+# NOTE: <SAMPLE_BUDGET_GB> was not specified for this audit session; this list
+# defaults to ~9 GB total. To trim to ~5 GB, drop the two files marked
+# "(drop first if budget tight)" below. See GMSLM_CODE_AUDIT.md Section 5.
+
+# Priority 1: raw audio + labels behind the labelled call-detection hold-out set
+# (precision 0.975 / recall 0.78 in the paper) -- NOT FOUND anywhere under
+# TALIA_PATH or in the raw AnimalRoomRecordings tree. No files to list here;
+# see GMSLM_CODE_AUDIT.md Section 8, open question 1.
+
+# Priority 2: raw audio spanning the date range, day/night, and every
+# recording rig found in AnimalRoomRecordings
+/ems/elsc-labs/omer-d/Omer-Lab-Shared/data/experiments/AnimalRoomRecordings/Rec_2021_05_03/210503_001.WAV
+/ems/elsc-labs/omer-d/Omer-Lab-Shared/data/experiments/AnimalRoomRecordings/Rec_2021_07_26-27/210727_009.WAV
+# (drop first if budget tight)
+/ems/elsc-labs/omer-d/Omer-Lab-Shared/data/experiments/AnimalRoomRecordings/Rec_2021_10_10-12/211012_047.WAV
+# (drop first if budget tight)
+/ems/elsc-labs/omer-d/Omer-Lab-Shared/data/experiments/AnimalRoomRecordings/Rec_2021_06_28_ultrasonic_recordings_colony/M12_F14_210628103427_001.WAV
+/ems/elsc-labs/omer-d/Omer-Lab-Shared/data/experiments/AnimalRoomRecordings/Rec_2021_06_28_ultrasonic_recordings_colony/FILES.LOG
+
+# Priority 3: Talia's processed outputs for the same raw file (210503_001),
+# to compare our segmentation with hers on the same audio
+/ems/elsc-labs/omer-d/talia.sternberg/MonkeyPhones/segmentations_results/firstTrial/Rec_2021_05_03/210503_001/call_indicies.pkl
+/ems/elsc-labs/omer-d/talia.sternberg/MonkeyPhones/segmentations_results/firstTrial/Rec_2021_05_03/210503_001/log.txt
+/ems/elsc-labs/omer-d/talia.sternberg/MonkeyPhones/segmentations_results/firstTrial/Rec_2021_05_03/210503_001/final_segments/
+/ems/elsc-labs/omer-d/talia.sternberg/MonkeyPhones/segmentations_results/firstTrial/Rec_2021_05_03/210503_001/10_seconds_segments/
+/ems/elsc-labs/omer-d/talia.sternberg/MonkeyPhones/segmentations_results/second_trial/Rec_2021_05_03/210503_001/30_seconds_segments/
+/ems/elsc-labs/omer-d/talia.sternberg/MonkeyPhones/segmentations_results/second_trial/Rec_2021_05_03/210503_001/10_seconds_segments/
+/ems/elsc-labs/omer-d/talia.sternberg/MonkeyPhones/segmentations_results/second_trial/downsample/Rec_2021_05_03/210503_001/10_seconds_segments/
+
+# Priority 4: PHEEDB -- smallest of the 3 full sessions (audio + labels)
+/ems/elsc-labs/omer-d/talia.sternberg/phee_exp/2023_01_22/ExpAudio.wav
+/ems/elsc-labs/omer-d/talia.sternberg/phee_exp/2023_01_22/config.mat
+/ems/elsc-labs/omer-d/talia.sternberg/phee_exp/2023_01_22/calls.pkl
+/ems/elsc-labs/omer-d/talia.sternberg/phee_exp/2023_01_22/final_calls_0.05.csv
+/ems/elsc-labs/omer-d/talia.sternberg/phee_exp/2023_01_22/merged_df_calls_0.05.csv

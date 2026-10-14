@@ -1,0 +1,254 @@
+#!/usr/bin/env bash
+# Prepares a token-cheap audit of Talia's GmSLM folder on the cluster.
+# Run on the cluster (inside tmux): bash talia_audit_setup.sh
+# It only READS Talia's folder. Everything it writes goes to $OUT.
+#
+# Produces:
+#   $OUT/index/*            size/count index of the whole folder (no Claude needed)
+#   $OUT/code_mirror/       copy of only the small code files (Claude works here)
+#   $OUT/prompt_session1.txt, prompt_session2.txt   ready-to-paste Claude prompts
+
+TALIA_INPUT="${TALIA_INPUT:-$HOME/omer-lab/talia.sternberg}"
+OUT="${OUT:-/ems/elsc-labs/omer-d/zvi.marmor/gmslm_audit}"
+SAMPLE_BUDGET_GB="${SAMPLE_BUDGET_GB:-20}"
+
+TALIA="$(readlink -f "$TALIA_INPUT")"
+if [ ! -d "$TALIA" ] || [ ! -r "$TALIA" ]; then
+  echo "ERROR: cannot read Talia's folder at '$TALIA_INPUT' (resolved: '$TALIA')." >&2
+  exit 1
+fi
+mkdir -p "$OUT/index" "$OUT/code_mirror"
+echo "Talia's folder (absolute): $TALIA"
+echo "Output folder:             $OUT"
+
+# ---------------------------------------------------------------------------
+# 1. One pass over the whole tree (slow on 8 TB; this is why we run it in tmux)
+# ---------------------------------------------------------------------------
+if [ -s "$OUT/index/all_files.tsv" ]; then
+  echo "[1/6] all_files.tsv already exists, skipping the scan (delete it to rescan)."
+else
+  echo "[1/6] Scanning every file (size, date, path). This can take an hour..."
+  (cd "$TALIA" && find . -type f -printf '%s\t%TY-%Tm-%Td\t%p\n' 2>"$OUT/index/scan_errors.txt") \
+    > "$OUT/index/all_files.tsv.tmp" || true
+  mv "$OUT/index/all_files.tsv.tmp" "$OUT/index/all_files.tsv"
+fi
+echo "      $(wc -l < "$OUT/index/all_files.tsv") files indexed; unreadable entries: $(cat "$OUT/index/scan_errors.txt" 2>/dev/null | wc -l)"
+
+# ---------------------------------------------------------------------------
+# 2-3. Summaries by extension and by folder (3 levels)
+# ---------------------------------------------------------------------------
+echo "[2/6] Summarising by extension..."
+awk -F'\t' '{n=$3; sub(/.*\//,"",n); e="(none)"; if (n ~ /\./) {e=n; sub(/.*\./,"",e); e=tolower(e)} c[e]++; s[e]+=$1}
+  END {for (e in c) printf "%.2f GB\t%d files\t.%s\n", s[e]/1e9, c[e], e}' \
+  "$OUT/index/all_files.tsv" | sort -rn > "$OUT/index/by_extension.txt"
+
+echo "[3/6] Summarising by folder..."
+awk -F'\t' '{d=$3; sub(/\/[^\/]*$/,"",d); n=split(d,p,"/"); k=p[1]; for(i=2;i<=n&&i<=4;i++) k=k"/"p[i]; c[k]++; s[k]+=$1}
+  END {for (k in c) printf "%.2f GB\t%d files\t%s\n", s[k]/1e9, c[k], k}' \
+  "$OUT/index/all_files.tsv" | sort -rn > "$OUT/index/by_folder.txt"
+
+# ---------------------------------------------------------------------------
+# 4. Copy only small code files (code < 2 MB, notebooks < 50 MB)
+# ---------------------------------------------------------------------------
+echo "[4/6] Copying small code files to code_mirror..."
+awk -F'\t' '{f=tolower($3)}
+  ($1 < 2e6 && f ~ /\.(py|sh|slurm|sbatch|yaml|yml|cfg|ini|toml|md)$/) || ($1 < 5e7 && f ~ /\.ipynb$/) {print substr($3,3)}' \
+  "$OUT/index/all_files.tsv" > "$OUT/index/code_files.txt"
+rsync -a --files-from="$OUT/index/code_files.txt" "$TALIA"/ "$OUT/code_mirror/" \
+  || echo "      WARNING: rsync reported errors (some files may be unreadable); continuing."
+
+# ---------------------------------------------------------------------------
+# 5. List (not copy) logs, manifests and other text files
+# ---------------------------------------------------------------------------
+echo "[5/6] Listing logs and manifests..."
+awk -F'\t' 'tolower($3) ~ /\.(log|out|err|txt|tsv|csv|json)$/' "$OUT/index/all_files.tsv" > "$OUT/index/text_files.tsv"
+
+# ---------------------------------------------------------------------------
+# 6. Hashes of the copied code (identical hash = identical copy)
+# ---------------------------------------------------------------------------
+echo "[6/6] Hashing code files..."
+(cd "$OUT/code_mirror" && find . -type f -exec md5sum {} + | sort) > "$OUT/index/code_hashes.txt"
+
+# ---------------------------------------------------------------------------
+# Prompts with paths filled in
+# ---------------------------------------------------------------------------
+cat > "$OUT/prompt_body.tmp" <<'PROMPT'
+You are auditing a messy research codebase on a compute cluster: Talia Sternberg's working folder for GmSLM
+("Generative Marmoset Spoken Language Modeling", Findings of EMNLP 2025). It contains experiments, copies,
+notebooks and dead ends. We are re-implementing GmSLM from the paper in a separate, clean codebase.
+Your jobs are:
+(a) extract what the paper does not say: exact algorithms, parameter values and trained artifacts;
+(b) find where the data actually lives on the cluster, describe it, and plan a small sample we can copy
+    to a laptop to redesign the preprocessing. The full dataset stays on the cluster.
+
+SETUP (already done for you, do not redo it)
+- Talia's original folder is <TALIA_PATH>. It is about 8 TB, almost all of it data.
+- You are running in <OUTPUT_PATH>/code_mirror: a copy of only its small code files (.py, .ipynb, .sh,
+  .slurm, .sbatch, .yaml, .yml, .cfg, .ini, .toml, .md) with the same relative paths. Read code here.
+  When you cite a file, give its ORIGINAL path: <TALIA_PATH>/<relative path>.
+- Index files in <OUTPUT_PATH>/index/ describe the full 8 TB folder without scanning it:
+    all_files.tsv     size_bytes <TAB> modified_date <TAB> relative_path, for every file
+    by_extension.txt  total size and file count per extension
+    by_folder.txt     total size and file count per folder, 3 levels deep
+    code_files.txt    the files copied into code_mirror
+    text_files.tsv    logs, manifests and text files (listed, NOT copied)
+    code_hashes.txt   md5 of every code_mirror file (identical hash = identical copy)
+  Never run find, du or ls -R on <TALIA_PATH>. Query the index with grep/awk instead.
+
+TOKEN BUDGET (important: be economical, the folder is huge and messy)
+- Work top-down. Start from by_folder.txt and by_extension.txt. Then find the entry points: SLURM and
+  shell scripts, the newest notebooks, and scripts whose names match the pipeline stages. Follow their
+  imports. Do NOT read every file.
+- Before reading files, grep code_mirror for stage keywords and read only the hits:
+  butter, highpass, sosfilt, 5000, stft, n_fft, hop_length, threshold, noise, segment, resample, 16000,
+  kmeans, MiniBatchKMeans, hubert, layer, dedup, unique_consecutive, transformer_lm, fairseq, hifigan,
+  vocoder, shuffle, revers, concat, phee, caller, receiver, probe, fad.
+- Never print a whole file longer than about 300 lines. Use grep -n, then sed -n 'START,ENDp' on the
+  relevant range.
+- Identical files (same hash in code_hashes.txt): read one, list the other paths. Near-copies (same
+  name in different folders): diff them and read only the differences.
+- Notebooks: never print the raw .ipynb JSON. Use a python one-liner that prints each cell's source and
+  at most the first 20 lines of its text output, and skips image outputs (base64) entirely.
+- Logs and manifests (listed in text_files.tsv, still on <TALIA_PATH>): read with grep, head -n 50 or
+  tail -n 50 only, and only the ones you need for a specific question.
+- Folders with many similar files: describe them by count, total size and 3 example names. Never list them.
+- Write the report incrementally: fill in each section as soon as you have its answer.
+- Stop when the questions below are answered. Unanswerable questions go into "Open questions".
+  Do not aim for completeness for its own sake.
+
+RULES
+- Read-only, everywhere. Do not edit, move, rename, copy or delete anything, in <TALIA_PATH> or in any
+  data directory. Do not install packages, start training, submit jobs, or run rsync/scp/cp. Small
+  read-only commands are fine: grep, head, tail, stat, soxi/ffprobe, and python one-liners that read audio
+  headers (soundfile.info) or print a checkpoint's keys and tensor shapes.
+- You write exactly two files, outside code_mirror:
+    <OUTPUT_PATH>/GMSLM_CODE_AUDIT.md   (the report)
+    <OUTPUT_PATH>/data_sample_list.txt  (one absolute path per line: the files to copy, see Step 4)
+- Sample size budget: <SAMPLE_BUDGET_GB> GB in total.
+- Data outside <TALIA_PATH> (shared lab storage, scratch, project space) has no index. Be gentle there:
+  never run an unbounded recursive scan. Wrap scans in `timeout 120`, use `find -maxdepth`, count files
+  with `find … | head -n 100000 | wc -l`, and estimate sizes from sampled subfolders. If a command times
+  out, say so and give your estimate.
+- Never copy passwords, tokens or keys into the report.
+- Cite every code finding as path:line. Mark each finding CONFIRMED (you read the code, and a launch
+  script, notebook output or log shows it was actually used) or INFERRED (plausible but unproven, e.g.
+  one of several copies). When several versions of something exist, say which looks final and why:
+  referenced by a launch script, newest, matches logged numbers, or matches the paper.
+
+STEP 1: INVENTORY (from the index, not by scanning)
+Summarise the folder from by_folder.txt and by_extension.txt: the big data folders, the code folders,
+the checkpoints (.pt/.ckpt/.pth), k-means models (.pkl/.joblib/.npy), manifests, logs, audio, figures,
+with sizes. Point out what is data, what is code, and what looks like copies or scratch.
+
+STEP 2: MAP THE CODE TO THE PIPELINE. For each stage, find the code and extract exact values.
+1. Preprocessing and call detection (most important; we know it underperformed):
+   - the high-pass filter (type, order, cutoff) and the sample rate it runs at
+   - spectrogram parameters
+   - every threshold in the noise and call-detection logic, and how each was chosen
+   - how noise frames are aggregated; the "<0.5 s or >2 s = noise" rule; the [0.25, 4] s call rule
+   - merging of nearby detections, and how call boundaries are set
+   - resampling method; how 10 s segments are built
+   - any handling of human speech, overlapping calls, clipping or day/night differences
+   Write the full algorithm out as numbered pseudocode with every constant.
+2. Detection evaluation: the labelled hold-out set behind precision 0.975 / recall 0.78. Where it is,
+   its format, how many hours, who labelled it, and how a detection was matched to a label.
+3. Dataset building: how the 80/10/10 split was made, file naming, timestamps, manifests.
+4. Vocalization-to-unit: the HuBERT layer used for the first k-means, the k-means settings, the HuBERT
+   fine-tuning config or command, the final layer (paper: 1) and cluster count (paper: 50), and whether
+   deduplication of repeated units is switched off everywhere.
+5. Unit language model: the training command and config (paper: fairseq transformer_lm_big); the real
+   peak learning rate (the paper prints "5e-45"); generation settings.
+6. Vocoder (unit HiFi-GAN): config, which repository it came from, checkpoints.
+7. Evaluation: how the Shuffle, Concat, Reversal and Phee (CallerChange / ReceiverChange) distractors
+   were built; whether sequences were scored by summed or mean log-probability; the PHEEDB labels
+   (format, location).
+8. Classification probes and FAD.
+
+STEP 3: DATA LOCATIONS
+1. Collect every data path the code refers to: absolute paths, path variables, config entries,
+   environment variables, paths in SLURM scripts and logs. Many will point outside <TALIA_PATH>.
+   List each one with path:line, what the code uses it for, and whether it exists and is readable.
+2. For each data location, describe it (for anything inside <TALIA_PATH>, use the index; elsewhere,
+   bounded commands only):
+   - role: raw colony recordings / preprocessed segments / unit files / manifests / labelled detection
+     set / PHEEDB / InfantMarmosetsVox / other
+   - folder layout (2-3 levels, with example names), and the file-naming convention, including how
+     date, time, room/colony, microphone or channel are encoded
+   - audio format from headers only (sample rate, channels, bit depth, codec), checked on 3-5 files;
+     typical file duration
+   - file count, total size and total hours (estimated if needed; say how)
+   - date range covered, and visible gaps (missing days or hours)
+   - whether the raw files are continuous 24/7 recordings or already cut
+   - which raw files the processed segments came from (is there a mapping?), and whether a segment's
+     original timestamp can be recovered
+   - permissions and owner: can our lab account read it, or must we ask someone?
+3. Write the paths as a YAML block ready to drop into a config:
+   raw_recordings, processed_segments, manifests, detection_labels, pheedb, infant_marmosets_vox, other.
+
+STEP 4: SAMPLE PLAN FOR PREPROCESSING WORK
+Choose raw files to copy to a laptop, within the budget, so we can redesign and tune call detection.
+Priorities, in order:
+1. The raw audio behind the labelled detection hold-out set, plus the labels themselves (the only
+   ground truth we have).
+2. Raw files from a spread of conditions: several different days across the date range, day and night,
+   busy and quiet periods, any known noisy events (cleaning, feeding), and every room or microphone that
+   exists.
+3. For a few of those raw files, Talia's processed outputs (detected calls, 10 s segments), so we can
+   compare our segmentation with hers on the same audio.
+4. PHEEDB audio and labels, if small enough.
+Write data_sample_list.txt with one absolute path per line. Group the lines with comment lines starting
+"#" that name the priority and the reason. In the report, give a table of the chosen files (path, size,
+duration, date/time, why chosen) and the total size. Also give an rsync command template that would
+copy the list to a laptop. Do not run it.
+
+STEP 5: DIFFERENCES FROM THE PAPER
+Compare with these paper values and list every difference:
+- preprocessing: 5 kHz high-pass; spectrogram window 2048 / hop 512; noise segments <0.5 s or >2 s;
+  calls 0.25-4 s; downsample to 16 kHz; 10 s segments; split 80/10/10
+- data: COLONYDB 216,660 segments, ~365 h (155 h of calls); PHEEDB 3 x 1 h at 16 kHz, 4 marmosets,
+  56 call-response pairs
+- HuBERT: hubert-base; fine-tuning mask span 10, p = 8%, peak LR 3.5e-3, 150k steps
+- units: layer 1, 50 clusters; k-means = MiniBatchKMeans on 50% of train+valid, batch 10k,
+  k-means++, 20 inits; no deduplication
+- uLM: transformer_lm_big (12 layers, 16 heads, 1024 / 4096), max 3072 units, 50k steps,
+  inverse_sqrt with 4k warm-up; generation beam 5, temperature 1.5
+- vocoder: 400k steps, no speaker or F0 input
+- probes: mean+variance pooling, 3 fully connected layers + LayerNorm + ReLU, 20 epochs
+
+REPORT STRUCTURE
+1. Summary: what is here, what is usable, where the data is, the biggest surprises (one paragraph)
+2. Inventory
+3. Findings per stage (preprocessing pseudocode in full)
+4. Data locations (one subsection per location, plus the YAML paths block)
+5. Sample plan (table, total size, rsync template)
+6. Reusable artifacts (table)
+7. Differences from the paper
+8. Open questions only Talia can answer (include data questions: missing days, which room/mic,
+   who owns access)
+PROMPT
+
+fill() {
+  sed -e "s|<TALIA_PATH>|$TALIA|g" -e "s|<OUTPUT_PATH>|$OUT|g" -e "s|<SAMPLE_BUDGET_GB>|$SAMPLE_BUDGET_GB|g" "$OUT/prompt_body.tmp"
+}
+{
+  echo "THIS SESSION: do Steps 1, 2 and 5 only (code). Write report sections 1, 2, 3, 6, 7 and 8."
+  echo "Leave sections 4 and 5 as the heading plus 'TODO (session 2)'. Do not write data_sample_list.txt."
+  echo
+  fill
+} > "$OUT/prompt_session1.txt"
+{
+  echo "THIS SESSION: do Steps 3 and 4 only (data). First read $OUT/GMSLM_CODE_AUDIT.md, written by an"
+  echo "earlier session. Fill in sections 4 and 5, write data_sample_list.txt, and add data findings to"
+  echo "sections 1 and 8. Do not redo or rewrite the other sections."
+  echo
+  fill
+} > "$OUT/prompt_session2.txt"
+rm -f "$OUT/prompt_body.tmp"
+
+echo
+echo "Done."
+du -sh "$OUT/code_mirror"
+echo "$(wc -l < "$OUT/index/code_files.txt") code files copied. Largest folders:"
+head -n 10 "$OUT/index/by_folder.txt"
+echo
+echo "Next: cd $OUT/code_mirror && claude   then paste $OUT/prompt_session1.txt"
