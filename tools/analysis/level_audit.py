@@ -36,6 +36,34 @@ HP_CUTOFF, HP_ORDER = 5_000.0, 5
 N_FFT, HOP = 2048, 512
 
 
+def read_bext_datetime(path: str) -> str:
+    """Wall-clock start time from the WAV's broadcast-extension chunk, or "" if absent.
+
+    The Zoom H3-VR writes a `bext` chunk whose OriginationDate/Time give each file's
+    exact start, so a sample index maps to absolute time. We need it here to tell a
+    recording-gain trend apart from a time-of-day (diurnal activity) effect. The
+    250 kHz ultrasonic folder has no bext chunk -- hence the graceful "".
+
+    Layout (EBU Tech 3285): Description 256B, Originator 32B, OriginatorReference 32B,
+    OriginationDate 10B at offset 320, OriginationTime 8B at offset 330.
+    """
+    with open(path, "rb") as f:
+        if f.read(4) != b"RIFF":
+            return ""
+        f.seek(12)
+        while True:
+            hdr = f.read(8)
+            if len(hdr) < 8:
+                return ""
+            cid, size = hdr[:4], int.from_bytes(hdr[4:8], "little")
+            if cid == b"bext":
+                body = f.read(size)
+                date = body[320:330].decode("ascii", "ignore").strip("\x00 ")
+                time = body[330:338].decode("ascii", "ignore").strip("\x00 ")
+                return f"{date}T{time}" if date else ""
+            f.seek(size + (size & 1), 1)
+
+
 def _prepare(x: np.ndarray, src_sr: int) -> np.ndarray:
     """Resample to the detection rate and high-pass, exactly as her pipeline does."""
     if src_sr != DETECT_SR:
@@ -75,6 +103,15 @@ def analyse(path: str, n_windows: int, window_s: float) -> Dict:
         row["mean_mix_max_mag"] = float(m.max())
         row["mean_mix_frames_any"] = float((m > AMP_THRESHOLD).any(axis=0).mean())
 
+        # Noise floor vs peak, in dB. This is the discriminator we actually care about:
+        # if the whole corpus was simply recorded at a higher gain later on, floor and
+        # peak rise together and the dynamic range stays flat. If the colony genuinely
+        # got louder, the peak rises while the stationary floor does not.
+        db = lambda v: float(20 * np.log10(v + 1e-12))  # noqa: E731
+        floor_db, med_db, peak_db = db(np.percentile(m, 10)), db(np.percentile(m, 50)), db(np.percentile(m, 99.9))
+        row["floor_db"], row["median_db"], row["peak_db"] = floor_db, med_db, peak_db
+        row["dynamic_range_db"] = peak_db - floor_db
+
         best = 0.0
         for c in range(n_ch):
             mc = _mag(_prepare(block[:, c], sr))
@@ -88,6 +125,7 @@ def analyse(path: str, n_windows: int, window_s: float) -> Dict:
     pct = np.mean(np.stack(all_mag_mean), axis=0)
     return {
         "file": path,
+        "start_time": read_bext_datetime(path),
         "sample_rate": sr,
         "channels": n_ch,
         "duration_s": total / sr,
@@ -110,17 +148,18 @@ def main() -> None:
 
     r = analyse(a.path, a.windows, a.window_s)
     p = r["mag_percentiles_mean_mix"]
-    print(f"{r['file']}\n  {r['sample_rate']} Hz, {r['channels']} ch, {r['duration_s']:.0f} s")
+    print(f"{r['file']}\n  {r['sample_rate']} Hz, {r['channels']} ch, {r['duration_s']:.0f} s"
+          f"  start={r['start_time'] or 'UNKNOWN (no bext)'}")
     print(f"\n|STFT| percentiles of the 4-capsule mean, librosa scaling "
           f"(threshold = {AMP_THRESHOLD}):")
     for k, v in p.items():
         print(f"    {k:>6}: {v:.5f}   {'ABOVE' if v > AMP_THRESHOLD else 'below'} threshold")
 
-    print(f"\n{'t (s)':>8} {'peak_raw':>9} {'mean-mix':>9} {'best-ch':>9} {'gain':>6} {'frames':>7}")
-    for w in r["windows"]:
-        g = w["best_channel_frac_above"] / w["mean_mix_frac_above"] if w["mean_mix_frac_above"] > 0 else float("inf")
-        print(f"{w['t_s']:8.0f} {w['peak_raw']:9.4f} {w['mean_mix_frac_above']:9.5f} "
-              f"{w['best_channel_frac_above']:9.5f} {g:6.2f}x {w['mean_mix_frames_any']:7.3f}")
+    fl = np.array([w["floor_db"] for w in r["windows"]])
+    pk = np.array([w["peak_db"] for w in r["windows"]])
+    print(f"\nnoise floor (p10)  median over windows: {np.median(fl):7.1f} dB")
+    print(f"peak        (p99.9) median over windows: {np.median(pk):7.1f} dB")
+    print(f"dynamic range                          : {np.median(pk - fl):7.1f} dB")
 
     mm = np.array([w["mean_mix_frac_above"] for w in r["windows"]])
     bc = np.array([w["best_channel_frac_above"] for w in r["windows"]])
