@@ -48,14 +48,28 @@ auditing Talia Sternberg's legacy tree.
 
 ### In progress
 
-Streaming 4-channel reader + `bext` manifest builder (`marmoset_developmental_agent/io/`).
+Corpus manifest build, SLURM job **61620647** (header-only probe of all ~2,750 raw
+files -> `$WORK_DIR/manifests/recordings.csv` + `recordings_rejected.csv`).
+
+Already landed and verified on real cluster data:
+- `marmoset_developmental_agent/io/raw_reader.py` -- streaming blocks (bounded memory),
+  `probe()` format validation, `bext` timestamps. Verified: `210503_001.WAV` reads as
+  48 kHz / 4 ch / PCM_24 / 3727 s, start 2021-05-03T18:58:29; 3 x 60 s blocks in 3.1 s.
+- `marmoset_developmental_agent/io/channels.py` -- `mean` / `max_energy` / `best_snr` /
+  `per_channel`. The ambisonic-W candidate was dropped: for A-format capsules
+  W = FLU+FRD+BLD+BRU, i.e. `mean` up to scale, so it would duplicate the baseline.
+- `tools/build_manifest.py`, 43 tests passing.
+
+**Audit correction:** the ultrasonic file *does* carry a bext chunk (GMSLM_CODE_AUDIT
+S4.1 says it does not). It is still correctly rejected, on rate (250 kHz) and channel
+count (1), not on the missing timestamp.
 
 ### Next
 
-1. Run the manifest builder over all 2,750 raw files -> `path,start_time,...` CSV.
-2. Channel-strategy ablation against hand labels.
+1. Read the manifest: total hours, date range, day/night split, rejects.
+2. Channel-strategy ablation (needs hand labels -- see Blocked).
 3. `call_indicies.pkl` verification gate: run the `"talia"` port end-to-end on
-   `210503_001.WAV` and compare detections to hers.
+   `210503_001.WAV` and compare detections to her 23.
 
 ### Blocked
 
