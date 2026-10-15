@@ -170,6 +170,9 @@ class HuBERTEncoderConfig:
     # no coherent code value to defer to -- audit S3.4, open question 3.
     layer: int = 1
     n_clusters: int = 50  # [paper] + [talia]
+    # Unit-vocabulary sweep run by tools/sweep_units.py (OPEN_DECISIONS D15): 50 is
+    # GmSLM's value, 200 the upper end GSLM found useful for English HuBERT units.
+    n_clusters_sweep: List[int] = field(default_factory=lambda: [50, 100, 200])
     kmeans_batch_size: int = 5_000  # [talia] MiniBatchKMeans default; paper says 10,000
     kmeans_n_init: int = 20  # [paper] + [talia]
     kmeans_fit_fraction: float = 0.5  # [paper]; [talia] hard-coded 5-of-10 shards

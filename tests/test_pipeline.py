@@ -390,3 +390,22 @@ def test_training_audio_is_unfiltered_unless_requested():
     dropped = preprocess_waveform(wav, sr, PreprocessingConfig(highpass_training_audio=True))[0]
     assert rms(kept) == pytest.approx(1 / np.sqrt(2), rel=0.05)  # 500 Hz still there
     assert rms(dropped) < 0.1 * rms(kept)  # 500 Hz filtered out
+
+
+def test_unit_sweep_defaults_and_normalised_surprisal():
+    """D15: the k sweep defaults to {50, 100, 200}, and normalised surprisal puts every k
+    on the same scale (1.0 = chance), since raw bits/unit grow with vocabulary size."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+    from sweep_units import summarise
+
+    assert AgentConfig().encoder.hubert.n_clusters_sweep == [50, 100, 200]
+    for k in (50, 100, 200):
+        chance_bits = math.log2(k + 3)
+        row = summarise({"n_clusters": k,
+                         "trajectory": [{"next_period": {"mean_surprisal_bits": chance_bits}}],
+                         "zero_shot": {"Shuffle": {"accuracy": 0.5}}})
+        assert row["normalised_surprisal"] == pytest.approx(1.0)
+        assert row["zero_shot"]["Shuffle"] == 0.5

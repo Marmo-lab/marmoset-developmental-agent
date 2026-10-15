@@ -101,6 +101,7 @@ def main(argv: List[str] | None = None) -> int:
     ap.add_argument("--days", type=int, help="Number of simulated days to train (overrides config).")
     ap.add_argument("--output-dir", type=str, help="Output directory (overrides config).")
     ap.add_argument("--seed", type=int, help="Random seed (overrides config).")
+    ap.add_argument("--n-clusters", type=int, help="HuBERT k-means vocabulary size (overrides config).")
     ap.add_argument("--skip-extended", action="store_true", help="Skip probes and ICI / pitch-shift metrics.")
     args = ap.parse_args(argv)
 
@@ -115,6 +116,8 @@ def main(argv: List[str] | None = None) -> int:
         cfg.output_dir = args.output_dir
     if args.seed is not None:
         cfg.seed = args.seed
+    if args.n_clusters is not None:
+        cfg.encoder.hubert.n_clusters = args.n_clusters
     torch.manual_seed(cfg.seed)
     np.random.seed(cfg.seed)
     device = resolve_device(cfg.device)
@@ -123,7 +126,8 @@ def main(argv: List[str] | None = None) -> int:
     save_config(cfg, out_dir / "config_resolved.yaml")
     log.info("Mode: %s | device: %s | encoder: %s | output: %s", "MOCK" if args.mock else "REAL", device,
              cfg.encoder.active, out_dir)
-    results: Dict[str, Any] = {"mode": "mock" if args.mock else "real", "encoder": cfg.encoder.active}
+    results: Dict[str, Any] = {"mode": "mock" if args.mock else "real", "encoder": cfg.encoder.active,
+                               "n_clusters": cfg.encoder.hubert.n_clusters}
 
     # 1-2. Data + preprocessing -------------------------------------------------
     ds, info, phee = load_data(cfg, args.mock)
