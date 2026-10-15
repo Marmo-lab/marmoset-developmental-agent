@@ -60,11 +60,17 @@ auditing Talia Sternberg's legacy tree.
 
 ### In progress
 
-Verification gate: `tools/analysis/verify_talia_port.py` on `210503_001.WAV` vs her
-`call_indicies.pkl`. First attempt (61629383) failed -- her pickle is a pandas DataFrame
-and pandas was not installed. Fixed in `requirements.txt`; re-ran `setup_env.sh`
-(**61629401**) with the gate chained after it (**61629402**, `--dependency=afterok`).
-Check: `tail -60 ~/marmoset_work/logs/verify-port-61629402.out`.
+**Verification gate**, job **61629425** (`VERIFY_ARGS=--ablate`): re-ported `"talia"`
+detector on `210503_001.WAV` vs her 23 calls.
+
+History: first real run (61629402) reproduced 13/23 of her calls (87% of ours matched
+hers, boundaries within ~10-40 ms) but missed mostly her *long* calls. Reading her
+`segment_processor.py` / `wav_processor.py` from `gmslm_audit/code_mirror` showed seven
+divergences in our port, which had been written from the audit's prose. The big one:
+her "abrupt up" rule rejects SHORT candidates (span < 20 frames) with freq_range > 2 kHz;
+we had a sliding-window jump test that rejected long calls. All seven fixed (commit
+"Re-port the talia detector from her source"). Check:
+`cat ~/marmoset_work/logs/verify-port-61629425.out`
 
 Already landed and verified on real cluster data:
 - `marmoset_developmental_agent/io/raw_reader.py` -- streaming blocks (bounded memory),
