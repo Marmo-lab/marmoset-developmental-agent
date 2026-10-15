@@ -58,19 +58,22 @@ auditing Talia Sternberg's legacy tree.
    scipy's normalised STFT, which is 1024x smaller than librosa's, so our `"talia"`
    detector was ~1024x stricter than hers. Now in librosa units, pinned by a test.
 
+8. **VERIFICATION GATE PASSED (job 61629425):** after re-porting from her source, the
+   `"talia"` detector reproduces her `call_indicies.pkl` for `210503_001` exactly --
+   23/23 calls, IoU 1.00 each, no extras. (The first port got 13/23: it was written from
+   the audit's prose and had seven divergences, chiefly the "abrupt up" rule.)
+9. **Channel evaluation (job 61629442, 54 files x 10 windows, gain-invariant):** daytime
+   call-band dynamic range vs `mean`: ambisonic_beam +2.45 dB (wins 260/286 windows),
+   per_channel +2.19, max_energy +2.14, best_snr +1.67. Night: ~0. Spectral-detector
+   yield: per_channel +7% calls / +15% call-s by day, others ~flat. **Correction:** the
+   earlier "3x bin survival for the best capsule" was mostly the 6 dB on-axis *gain*
+   difference under an absolute threshold; the gain-invariant gain is ~2 dB.
+   Provisional default for the training stream: `ambisonic_beam`.
+10. **Unit sweep implemented** (D15): `tools/sweep_units.py`, k in {50,100,200}; mock runs.
+
 ### In progress
 
-**Verification gate**, job **61629425** (`VERIFY_ARGS=--ablate`): re-ported `"talia"`
-detector on `210503_001.WAV` vs her 23 calls.
-
-History: first real run (61629402) reproduced 13/23 of her calls (87% of ours matched
-hers, boundaries within ~10-40 ms) but missed mostly her *long* calls. Reading her
-`segment_processor.py` / `wav_processor.py` from `gmslm_audit/code_mirror` showed seven
-divergences in our port, which had been written from the audit's prose. The big one:
-her "abrupt up" rule rejects SHORT candidates (span < 20 frames) with freq_range > 2 kHz;
-we had a sliding-window jump test that rejected long calls. All seven fixed (commit
-"Re-port the talia detector from her source"). Check:
-`cat ~/marmoset_work/logs/verify-port-61629425.out`
+Nothing running on the cluster.
 
 Already landed and verified on real cluster data:
 - `marmoset_developmental_agent/io/raw_reader.py` -- streaming blocks (bounded memory),
@@ -87,18 +90,19 @@ count (1), not on the missing timestamp.
 
 ### Next
 
-1. Read the verification-gate result; if it reproduces her 23 calls, run it on a few
-   more files that have `firstTrial` output (especially daytime ones) before trusting it.
-2. Channel-strategy ablation (needs hand labels -- see Blocked).
-3. Wire `io/raw_reader` into `dataset_builder` (replace the eager `audio.mean(axis=1)`
-   loader at `load_recordings_from_manifest`) and add `channel_strategy` to
-   `PreprocessingConfig`.
+1. Run the gate on a few more files with `firstTrial` output (daytime, busy ones) to
+   confirm the exact match generalises beyond one quiet file.
+2. Wire `io/raw_reader` into `dataset_builder` (replace the eager `audio.mean(axis=1)`
+   loader) and add `channel_strategy` to `PreprocessingConfig` (default ambisonic_beam).
+3. Labels (C9) -> real precision/recall for each channel strategy and detector.
+4. Frozen-HuBERT path (D14): HF checkpoint needed -- stock facebook/hubert-base-ls960 for
+   a first timing run, then convert Talia's marmoset checkpoint (layer question open).
 
 ### Blocked
 
 - **Hand-labelled hold-out set does not exist** (audit S3.2) and nothing can be called
   an improvement without it. `OPEN_DECISIONS.md` C9-C13 are unanswered.
-- `OPEN_DECISIONS.md` sections B, C, D, E are unanswered (A1-A5 are answered).
+- OPEN_DECISIONS: C9 open (labelling plan proposed), C11-C13, D18, E20-E23 unanswered.
 
 ---
 
