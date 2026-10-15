@@ -73,7 +73,23 @@ auditing Talia Sternberg's legacy tree.
 
 ### In progress
 
-Nothing running on the cluster.
+**Labelling package** (C9): job **61631670** (`make_labeling.sbatch`, chained after
+setup_env 61631669 which adds matplotlib) builds `~/marmoset_work/labeling/` on the
+cluster -- 30 one-minute clips (24 day / 6 night), `clips.csv`, `guide.png`,
+`LABELING.md`. **SSH dropped before I could check it.** On reconnect:
+
+```bash
+ssh elsc-login-direct 'sacct -j 61631670 --format=State,Elapsed; tail -40 ~/marmoset_work/logs/make-labeling-61631670.out'
+scp -r elsc-login-direct:marmoset_work/labeling ~/Omer_Lab_Project/   # ~175 MB, gitignored
+```
+Then look at `labeling/guide.png` before handing it over (check the "call" panels
+really show calls and the "click" panels really show clicks).
+
+**Git history was rewritten on 2026-10-15** to strip Claude co-author trailers (user
+request) and force-pushed. The cluster clone still has the old history. On reconnect:
+`cd ~/marmoset-developmental-agent && git status` (must be clean) then
+`git fetch origin && git reset --hard origin/main`. Local backup branch:
+`backup/pre-trailer-removal-2026-10-15`. **Never add those trailers again.**
 
 Already landed and verified on real cluster data:
 - `marmoset_developmental_agent/io/raw_reader.py` -- streaming blocks (bounded memory),
@@ -102,7 +118,7 @@ count (1), not on the missing timestamp.
 
 - **Hand-labelled hold-out set does not exist** (audit S3.2) and nothing can be called
   an improvement without it. `OPEN_DECISIONS.md` C9-C13 are unanswered.
-- OPEN_DECISIONS: C9 open (labelling plan proposed), C11-C13, D18, E20-E23 unanswered.
+- OPEN_DECISIONS.md restructured: 9 open questions at the top (C10-C13, D18, D19, E20-E23), decided log below.
 
 ---
 
