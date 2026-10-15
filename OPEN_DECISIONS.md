@@ -158,7 +158,7 @@ Do you agree, or do you want to commit to one on acoustic/biological grounds fir
 (If you know how the recorder was physically positioned relative to the cages, that would
 genuinely inform this — tell me if you do.)
 
-**A:**
+**A: ANSWERED (2026-10-15) — implement all five and evaluate the improvement.** Four were implemented already (`mean`, `max_energy`, `best_snr`, `per_channel`). The fifth as originally phrased, ambisonic W, equals `mean` up to a constant (W = FLU+FRD+BLD+BRU), so the fifth is implemented as a genuinely different ambisonic option instead: `ambisonic_beam`, virtual cardioids steered around the horizon from the A->B-format conversion, choosing the loudest per block.
 
 ### B7. The ultrasonic folder — exclude, or handle separately?
 
@@ -176,7 +176,7 @@ those two individuals' data matters to you.
 Either way our reader will **hard-fail** on any file whose format doesn't match the
 expected 48 kHz / 4 ch, rather than silently mis-processing it. That part isn't optional.
 
-**A:**
+**A: ANSWERED (2026-10-15) — (a) exclude the ultrasonic folder.** Already enforced: `io.raw_reader.probe` rejects it (250 kHz, 1 ch); the manifest lists its 6 files under rejects.
 
 ### B8. Is the `firstTrial` vs `second_trial` question settled for you?
 
@@ -189,7 +189,7 @@ tree, using `firstTrial`'s manifests only as a cross-check on segment counts. Co
 that's what you want, or say if you'd rather we reuse her processed segments directly
 (faster, but inherits every issue we just catalogued).
 
-**A:**
+**A: ANSWERED (2026-10-15) — regenerate everything from raw**; her `firstTrial` manifests are a cross-check on counts only.
 
 ---
 
@@ -208,7 +208,7 @@ spectrogram, or are we doing it ourselves? If the latter, I should build a simpl
 labelling tool (spectrogram view + click-drag to mark onset/offset + keyboard shortcuts,
 writing a plain CSV). That's maybe a day of work and worth it.
 
-**A:**
+**A: OPEN (2026-10-15).** Zvi can label but cannot tell call types apart. Proposal in chat: label onset/offset only (call vs not-call), no types; detector-proposed candidates plus blind windows to measure misses.
 
 ### C10. How much audio, and sampled how?
 
@@ -221,7 +221,7 @@ an artifact.
 Confirm the budget, or tell me if you can only get e.g. 15 minutes (workable, just
 noisier estimates).
 
-**A:**
+**A: DEFERRED (2026-10-15)** — revisit later.
 
 ### C11. What exactly counts as "a call" for labelling purposes?
 
@@ -300,7 +300,7 @@ the GmSLM-comparison arm, and only spend effort on the conversion once DINO-SR r
 Do you agree? And relatedly: **do you want to try to recover her HuBERT checkpoint at
 all**, or treat GmSLM reproduction as out of scope and build only forward?
 
-**A:**
+**A: ANSWERED (2026-10-15) — frozen HuBERT first.** First runs are plumbing / timing / sanity, so the cheaper frozen path wins. DINO-SR later.
 
 ### D15. Unit vocabulary sweep — which k, and decided by what metric?
 
@@ -316,7 +316,7 @@ unit repeats." I'd like to also report a **run-length-corrected** surprisal so w
 mistake duration modelling for sequence learning. Tell me if you want that as a primary
 metric or a diagnostic.
 
-**A:**
+**A: ANSWERED (2026-10-15) — sweep k in {50, 100, 200}, implemented in code.**
 
 ### D16. Developmental time-scale: what does one "simulated day" mean? **[BLOCKING for the training stage]**
 
@@ -342,7 +342,7 @@ Also note: **our recordings are of a colony, not of a single developing infant.*
 chronology is calendar time across the colony, not one animal's age. Is that the intended
 interpretation, or is there per-individual data I don't know about?
 
-**A:**
+**A: ANSWERED (2026-10-15) — keep the human exposure curve for now**; a marmoset curve comes later. `day_assignment: exposure` (current default) stays.
 
 ### D17. What's the actual deliverable, and in what order?
 
@@ -356,7 +356,7 @@ These are different projects sharing a codebase:
 opposite directions (D14). Which is the priority, and is (a) a gate we must pass before
 (b), or an optional comparison arm?
 
-**A:**
+**A: ANSWERED (2026-10-15) — (c) fix preprocessing first, then (b) the developmental agent.** GmSLM reproduction (a) is a comparison arm, not a gate.
 
 ### D18. PHEEDB — use it, and how?
 

@@ -215,3 +215,23 @@ def test_stft_scaling_matches_librosa_not_scipy():
     theirs = np.abs(librosa.stft(x, n_fft=cfg.n_fft, hop_length=cfg.hop_length))
     assert ours.max() == pytest.approx(theirs.max(), rel=0.02)
     assert ours.max() > 100 * cfg.amp_threshold  # a loud tone must clear it comfortably
+
+
+def test_ambisonic_beam_has_unit_on_axis_gain_and_beats_capsules_and_mean():
+    """A horizontal plane wave seen by four ideal tetrahedral cardioids (FLU/FRD/BLD/BRU):
+    the steered beam recovers unit gain; the best capsule is off-axis by ~35 deg of
+    elevation (gain ~0.79); the 4-capsule mean keeps only the omni half (0.5)."""
+    from marmoset_developmental_agent.io.channels import ambisonic_beams
+
+    d = np.array([[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]) / np.sqrt(3)
+    for az in (0, 45, 90, 180, 270):
+        u = np.array([np.cos(np.deg2rad(az)), np.sin(np.deg2rad(az)), 0.0])
+        caps = np.array([0.5 * (1 + u @ di) for di in d])[:, None] * np.ones((1, 8))
+        best_beam = ambisonic_beams(caps)[:, 0].max()
+        assert best_beam == pytest.approx(1.0, abs=1e-6)
+        assert best_beam > caps[:, 0].max() > caps[:, 0].mean() == pytest.approx(0.5)
+
+
+def test_ambisonic_beam_requires_four_capsules():
+    with pytest.raises(ValueError, match="4 A-format"):
+        combine(np.zeros((100, 2), np.float32), "ambisonic_beam", SR)
