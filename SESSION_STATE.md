@@ -71,25 +71,22 @@ auditing Talia Sternberg's legacy tree.
    Provisional default for the training stream: `ambisonic_beam`.
 10. **Unit sweep implemented** (D15): `tools/sweep_units.py`, k in {50,100,200}; mock runs.
 
+11. **Labelling package delivered** to the laptop at `labeling/` (gitignored, ~170 MB):
+    30 one-minute clips (24 day / 6 night, May 9 - Oct 12, one per date where possible),
+    `clips.csv`, `guide.png`, `LABELING.md`. Zvi is labelling in Audacity; exports go to
+    `labeling/labels/clip_XX.txt`. Import with `tools/labels/import_audacity.py`.
+12. **Two findings from inspecting her detections visually** (while building the guide):
+    (a) her "abrupt up" click rule rejected a clear rising call at 210503_001 t=41.0 s;
+    (b) her call boundaries cover only *fragments* of longer, overlapping calling (e.g.
+    t=61-62 s, 42-43 s): the first minute of that file is near-continuous calling. Both
+    suggest her real recall is lower than detection counts imply -- the labels will tell.
+    The guide is therefore hand-picked, with no detector boundaries.
+
 ### In progress
 
-**Labelling package** (C9): job **61631670** (`make_labeling.sbatch`, chained after
-setup_env 61631669 which adds matplotlib) builds `~/marmoset_work/labeling/` on the
-cluster -- 30 one-minute clips (24 day / 6 night), `clips.csv`, `guide.png`,
-`LABELING.md`. **SSH dropped before I could check it.** On reconnect:
-
-```bash
-ssh elsc-login-direct 'sacct -j 61631670 --format=State,Elapsed; tail -40 ~/marmoset_work/logs/make-labeling-61631670.out'
-scp -r elsc-login-direct:marmoset_work/labeling ~/Omer_Lab_Project/   # ~175 MB, gitignored
-```
-Then look at `labeling/guide.png` before handing it over (check the "call" panels
-really show calls and the "click" panels really show clicks).
-
-**Git history was rewritten on 2026-10-15** to strip Claude co-author trailers (user
-request) and force-pushed. The cluster clone still has the old history. On reconnect:
-`cd ~/marmoset-developmental-agent && git status` (must be clean) then
-`git fetch origin && git reset --hard origin/main`. Local backup branch:
-`backup/pre-trailer-removal-2026-10-15`. **Never add those trailers again.**
+Nothing running. Waiting on Zvi's labels. Cluster clone reset to the rewritten history
+(at 3127efb or later); local backup branch `backup/pre-trailer-removal-2026-10-15`.
+**Never add Claude co-author trailers to commits.**
 
 Already landed and verified on real cluster data:
 - `marmoset_developmental_agent/io/raw_reader.py` -- streaming blocks (bounded memory),
