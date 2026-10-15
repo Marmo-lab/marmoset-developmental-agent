@@ -189,3 +189,29 @@ def test_iter_blocks_rejects_overlap_ge_block(good_wav):
 def test_iter_blocks_best_snr_autoselects_when_channel_not_given(good_wav):
     sig, _ = next(iter(iter_blocks(good_wav, block_s=2.0, strategy="best_snr")))
     assert sig.shape[0] == 1
+
+
+# --------------------------------------------------------------------------- #
+# STFT scaling (regression: our port must speak librosa's units)
+# --------------------------------------------------------------------------- #
+def test_stft_scaling_matches_librosa_not_scipy():
+    """Talia's AMP_THRESHOLD = 0.02 is an absolute magnitude against librosa.stft.
+
+    scipy.signal.stft divides by the window sum (1024 for a 2048-point Hann) and
+    librosa does not, so a port that leaves scipy's normalisation in place is ~1024x
+    stricter than hers and detects almost nothing. This pins the convention.
+    """
+    import librosa
+
+    from marmoset_developmental_agent.config.agent_config import PreprocessingConfig
+    from marmoset_developmental_agent.preprocessing.filter_5khz import _stft
+
+    cfg = PreprocessingConfig()
+    sr = cfg.detection_sample_rate
+    t = np.arange(sr) / sr
+    x = (0.3 * np.sin(2 * np.pi * 7_000 * t)).astype(np.float32)
+
+    _, _, ours = _stft(x, sr, cfg)
+    theirs = np.abs(librosa.stft(x, n_fft=cfg.n_fft, hop_length=cfg.hop_length))
+    assert ours.max() == pytest.approx(theirs.max(), rel=0.02)
+    assert ours.max() > 100 * cfg.amp_threshold  # a loud tone must clear it comfortably

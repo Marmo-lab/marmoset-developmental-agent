@@ -317,14 +317,27 @@ def test_talia_durations_round_trip_to_her_frame_counts():
     assert round(p.boundary_pad_s * p.detection_sample_rate) == 500
 
 
-def _tone_burst(sr: int, dur_s: float, freq_hz: float, onset_s: float, total_s: float) -> np.ndarray:
-    """A pure tone of ``dur_s`` inside ``total_s`` of low-level broadband noise."""
+def _tone_burst(
+    sr: int, dur_s: float, freq_hz: float, onset_s: float, total_s: float,
+    noise: float = 1e-5, amplitude: float = 0.05,
+) -> np.ndarray:
+    """A pure tone of ``dur_s`` inside ``total_s`` of low-level broadband noise.
+
+    Levels matter here, and not only for realism. The ``"talia"`` detector thresholds
+    the *absolute* |STFT| magnitude at 0.02, so a synthetic noise floor that is too hot
+    makes every bin "survive", `freq_range` saturate and the three-way classification
+    collapse -- the detector then reports nothing, for the opposite reason to the one
+    it fails for on real data. The defaults here sit in the same regime as the real
+    colony recordings (broadband RMS ~5e-4 across 4 capsules, in-band content far
+    lower), so the test exercises the detector rather than an artefact of the fixture.
+    The ``"spectral"`` path is scale-invariant and unaffected.
+    """
     rng = np.random.default_rng(0)
-    wav = (0.001 * rng.standard_normal(int(total_s * sr))).astype(np.float32)
+    wav = (noise * rng.standard_normal(int(total_s * sr))).astype(np.float32)
     n = int(dur_s * sr)
     s = int(onset_s * sr)
     t = np.arange(n) / sr
-    wav[s : s + n] += (0.5 * np.sin(2 * np.pi * freq_hz * t)).astype(np.float32)
+    wav[s : s + n] += (amplitude * np.sin(2 * np.pi * freq_hz * t)).astype(np.float32)
     return wav
 
 

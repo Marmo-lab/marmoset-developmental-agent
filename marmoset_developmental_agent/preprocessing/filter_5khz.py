@@ -111,14 +111,30 @@ def resample_audio(audio: np.ndarray, orig_sr: int, target_sr: int) -> np.ndarra
 
 
 def _stft(audio: np.ndarray, sample_rate: int, cfg: PreprocessingConfig) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Magnitude STFT with the paper's window/hop. Returns (freqs, times, |STFT|)."""
+    """Magnitude STFT with the paper's window/hop, in **librosa's scaling**.
+
+    Returns ``(freqs, times, |STFT|)``.
+
+    The scaling is not a detail. ``scipy.signal.stft`` divides by the window sum (1024
+    for a 2048-point periodic Hann) while ``librosa.stft`` does not, so the two differ
+    by exactly 1024x. Talia's ``AMP_THRESHOLD = 0.02`` is an absolute magnitude taken
+    against *librosa's* output, so leaving scipy's normalisation in place would make
+    our port ~1024x stricter than hers and detect essentially nothing. We undo the
+    normalisation here so the threshold means what she meant by it.
+
+    The ``"spectral"`` path is unaffected either way: it compares each bin to a
+    per-bin median in dB, which is scale-invariant. Only the ``"talia"`` path, with its
+    absolute threshold, depends on this -- which is precisely why the absolute
+    threshold is the thing we intend to replace.
+    """
     n_fft, hop = cfg.n_fft, cfg.hop_length
     if len(audio) < n_fft:
         audio = np.pad(audio, (0, n_fft - len(audio)))
     freqs, times, spec = signal.stft(
         audio, fs=sample_rate, nperseg=n_fft, noverlap=n_fft - hop, boundary=None, padded=False
     )
-    return freqs, times, np.abs(spec)
+    window_sum = signal.get_window("hann", n_fft, fftbins=True).sum()
+    return freqs, times, np.abs(spec) * window_sum
 
 
 def _dilate(mask: np.ndarray) -> np.ndarray:
