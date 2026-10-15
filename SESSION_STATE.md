@@ -5,7 +5,7 @@ lands. Read this first on reconnect: it should be enough to resume without re-de
 anything. Long-lived decisions live in `OPEN_DECISIONS.md`; this file is "where are we
 right now".
 
-**Last updated:** 2026-10-14
+**Last updated:** 2026-10-15
 
 ---
 
@@ -46,10 +46,25 @@ auditing Talia Sternberg's legacy tree.
 5. Verification target decoded: `210503_001` -> 23 calls, all within the first 358 s of
    a 3,727 s file, all durations inside our adjudicated [0.2322, 4.0] s bounds.
 
+6. **Corpus manifest built** (job 61620693, 3 min 51 s):
+   `$WORK_DIR/manifests/recordings.csv` -- **2,719 files, 2,778 h**, 2021-05-03T18:58:29
+   to 2021-10-12T15:00:18, chronologically sorted by bext start time.
+   Rejects in `recordings_rejected.csv`: 31 = **25 zero-frame files** (recorder start/stop
+   artefacts, mostly `_001` or the last file of a session) + **6 ultrasonic** files.
+   Recording is effectively 24/7 and uniform over the clock (~115-125 h per hour-of-day
+   bucket), so **day 06-19 = 1,509 h (54.3%), night = 1,269 h (45.7%)**. 137 recording
+   dates over a 163-day span; 26 dates have no audio; median 23.8 h per recording date.
+7. **Bug found and fixed in our own port (commit 751050c):** `filter_5khz._stft` used
+   scipy's normalised STFT, which is 1024x smaller than librosa's, so our `"talia"`
+   detector was ~1024x stricter than hers. Now in librosa units, pinned by a test.
+
 ### In progress
 
-Corpus manifest build, SLURM job **61620647** (header-only probe of all ~2,750 raw
-files -> `$WORK_DIR/manifests/recordings.csv` + `recordings_rejected.csv`).
+Verification gate: `tools/analysis/verify_talia_port.py` on `210503_001.WAV` vs her
+`call_indicies.pkl`. First attempt (61629383) failed -- her pickle is a pandas DataFrame
+and pandas was not installed. Fixed in `requirements.txt`; re-ran `setup_env.sh`
+(**61629401**) with the gate chained after it (**61629402**, `--dependency=afterok`).
+Check: `tail -60 ~/marmoset_work/logs/verify-port-61629402.out`.
 
 Already landed and verified on real cluster data:
 - `marmoset_developmental_agent/io/raw_reader.py` -- streaming blocks (bounded memory),
@@ -66,10 +81,12 @@ count (1), not on the missing timestamp.
 
 ### Next
 
-1. Read the manifest: total hours, date range, day/night split, rejects.
+1. Read the verification-gate result; if it reproduces her 23 calls, run it on a few
+   more files that have `firstTrial` output (especially daytime ones) before trusting it.
 2. Channel-strategy ablation (needs hand labels -- see Blocked).
-3. `call_indicies.pkl` verification gate: run the `"talia"` port end-to-end on
-   `210503_001.WAV` and compare detections to her 23.
+3. Wire `io/raw_reader` into `dataset_builder` (replace the eager `audio.mean(axis=1)`
+   loader at `load_recordings_from_manifest`) and add `channel_strategy` to
+   `PreprocessingConfig`.
 
 ### Blocked
 
