@@ -1,22 +1,27 @@
 """Render the visual labelling guide: what a marmoset call looks like vs. noise.
 
-Uses 210503_001.WAV, where our detector port reproduces Talia's 23 detections exactly.
-Top rows: some of those detections (her detector's calls, with +-1 s of context).
-Bottom row: the candidates her "abrupt up" rule rejects -- short broadband clicks --
-found by re-running the port with that rule disabled. Both are real audio from the
-colony, drawn at full bandwidth (0-24 kHz) from the beam-steered signal a labeller
-will actually be looking at.
+The panels are chosen *by eye*, not by any detector. A first version took its "call"
+examples from Talia's detections and its "noise" examples from the candidates her
+"abrupt up" rule rejects -- but on inspection one of those rejected "clicks" (41.0 s)
+holds a clear rising call, another (29.0 s) is a tonal harmonic stack, and her detected
+boundaries cover only fragments of longer calling. A guide built that way teaches the
+labeller the detector's mistakes, which is the opposite of what labels are for.
+
+No boundaries are drawn: the labeller works blind to detector output (LABELING.md).
+
+Rows: clear calls / not calls / tricky cases, each panel titled with what to do.
+Sources are 210503_001.WAV (beam-steered, as the clips are) and the night clips of the
+labelling set (already beam-steered and normalised).
 
 Usage (on the cluster):
-    python tools/labels/make_guide.py <raw.wav> -o guide.png
+    python tools/labels/make_guide.py <210503_001.wav> <labeling-dir> -o guide.png
 """
 
 from __future__ import annotations
 
 import argparse
-import dataclasses
-import sys
 from pathlib import Path
+from typing import List, Tuple
 
 import matplotlib
 matplotlib.use("Agg")
@@ -25,58 +30,67 @@ import numpy as np  # noqa: E402
 import soundfile as sf  # noqa: E402
 from scipy import signal  # noqa: E402
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "analysis"))
-from verify_talia_port import detect  # noqa: E402
-
-from marmoset_developmental_agent.config.agent_config import PreprocessingConfig  # noqa: E402
 from marmoset_developmental_agent.io.channels import ambisonic_beams, band_energy  # noqa: E402
 
+# (row, source, start_s, end_s, title). source "raw" = 210503_001, else a clip file name.
+PANELS: List[Tuple[int, str, float, float, str]] = [
+    (0, "raw", 59.9, 63.1, "CALLS: bands + sweeps 5-12 kHz\n(several animals overlap: label each group)"),
+    (0, "raw", 41.4, 44.5, "CALLS: steady band ~7 kHz with\nupsweeps; faint copy near 12 kHz"),
+    (0, "raw", 68.8, 71.3, "CALLS: short rising sweeps,\neach one a label (unless gap < 0.1 s)"),
+    (0, "raw", 356.4, 359.3, "CALL: wavy band ~7 kHz (trill)\nlabel the whole wavy stretch"),
+    (1, "raw", 19.9, 22.3, "NOT A CALL: clicks = thin vertical\nlines covering all frequencies"),
+    (1, "clip_01.wav", 10.0, 13.0, "NOT A CALL: night background\n(nothing to label here)"),
+    (1, "clip_05.wav", 30.0, 33.0, "NOT A CALL: night background\n(empty label file is a valid answer)"),
+    (1, "raw", 38.3, 40.3, "LEFT: faint call (label it)\nRIGHT: loud broadband burst (not a call)"),
+    (2, "raw", 39.9, 42.4, "TRICKY: a real sweep among clicks\n-> label the sweep `c`, ignore the clicks"),
+    (2, "raw", 28.0, 30.4, "TRICKY: evenly spaced flat lines\n(~3/6/8 kHz), unusual -> label `?`"),
+    (2, "raw", 26.1, 29.6, "TRICKY: dense clicks hiding faint tones\n-> label only bands you can see, else `?`"),
+    (2, "raw", 62.5, 65.6, "TRICKY: two animals overlapping\n-> one label covering both"),
+]
 
-def panel(ax, path: str, start: int, end: int, sr: int, title: str, ctx_s: float = 1.0) -> None:
-    a = max(0, start - int(ctx_s * sr)); b = end + int(ctx_s * sr)
-    with sf.SoundFile(path) as f:
-        f.seek(a)
-        block = f.read(b - a, dtype="float32", always_2d=True)
-    beams = ambisonic_beams(block.T)
-    x = beams[int(np.argmax(band_energy(beams, sr)))]
-    fr, t, z = signal.stft(x, fs=sr, nperseg=1024, noverlap=768)
-    db = 20 * np.log10(np.abs(z) + 1e-12)
-    vmax = np.percentile(db, 99.8)
-    ax.pcolormesh(t, fr / 1000, db, shading="auto", cmap="magma", vmin=vmax - 60, vmax=vmax)
-    ax.axvline((start - a) / sr, color="cyan", lw=1, ls="--")
-    ax.axvline((end - a) / sr, color="cyan", lw=1, ls="--")
-    ax.set_ylim(0, 24); ax.set_title(title, fontsize=9)
-    ax.set_xlabel("s", fontsize=8); ax.set_ylabel("kHz", fontsize=8); ax.tick_params(labelsize=7)
+
+def load(src: str, start: float, end: float, raw: str, clips: Path) -> Tuple[np.ndarray, int]:
+    if src == "raw":
+        sr = sf.info(raw).samplerate
+        with sf.SoundFile(raw) as f:
+            f.seek(int(start * sr))
+            block = f.read(int((end - start) * sr), dtype="float32", always_2d=True)
+        beams = ambisonic_beams(block.T)
+        return beams[int(np.argmax(band_energy(beams, sr)))], sr
+    x, sr = sf.read(clips / "clips" / src, start=None, dtype="float32")
+    return x[int(start * sr): int(end * sr)], sr
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("wav")
+    ap.add_argument("raw_wav")
+    ap.add_argument("labeling_dir")
     ap.add_argument("-o", "--out", required=True)
     a = ap.parse_args()
-    sr = sf.info(a.wav).samplerate
 
-    cfg = PreprocessingConfig(frame_features="talia")
-    calls = detect(a.wav, cfg)
-    loose = detect(a.wav, dataclasses.replace(cfg, abrupt_up_freq_range_hz=float("inf")))
-    clicks = [c for c in loose if not any(min(c[1], k[1]) > max(c[0], k[0]) for k in calls)]
-
-    by_len = sorted(calls, key=lambda c: c[1] - c[0], reverse=True)
-    show = by_len[:4] + by_len[len(by_len) // 2: len(by_len) // 2 + 4]
-    n_rows = 3 if clicks else 2
-    fig, axes = plt.subplots(n_rows, 4, figsize=(16, 3.4 * n_rows))
-    for ax, (s, e) in zip(axes[:2].ravel(), show):
-        panel(ax, a.wav, s, e, sr, f"CALL  t={s/sr:.1f}s  dur {(e-s)/sr:.2f}s")
-    if clicks:
-        for ax, (s, e) in zip(axes[2], clicks[:4]):
-            panel(ax, a.wav, s, e, sr, f"NOT A CALL (click)  t={s/sr:.1f}s")
-        for ax in axes[2][len(clicks[:4]):]:
-            ax.axis("off")
-    fig.suptitle("Marmoset calls (rows 1-2) vs. noise (row 3) -- 210503_001, beam-steered, "
-                 "dashed = detected boundaries", fontsize=11)
-    fig.tight_layout()
-    fig.savefig(a.out, dpi=110)
-    print(f"{len(calls)} calls, {len(clicks)} clicks -> {a.out}")
+    fig, axes = plt.subplots(3, 4, figsize=(17, 11))
+    col = {0: 0, 1: 0, 2: 0}
+    for row, src, s, e, title in PANELS:
+        ax = axes[row][col[row]]
+        col[row] += 1
+        x, sr = load(src, s, e, a.raw_wav, Path(a.labeling_dir))
+        fr, t, z = signal.stft(x, fs=sr, nperseg=1024, noverlap=768)
+        db = 20 * np.log10(np.abs(z) + 1e-12)
+        vmax = np.percentile(db, 99.8)
+        ax.pcolormesh(t, fr / 1000, db, shading="auto", cmap="magma", vmin=vmax - 60, vmax=vmax)
+        ax.set_ylim(0, 24)
+        ax.set_title(title, fontsize=9, color={0: "darkgreen", 1: "darkred", 2: "darkorange"}[row])
+        ax.set_xlabel("seconds", fontsize=8); ax.set_ylabel("kHz", fontsize=8)
+        ax.tick_params(labelsize=7)
+    for row, label in enumerate(["CALLS -> label `c`", "NOT CALLS -> don't label (optional `n`)",
+                                 "TRICKY CASES"]):
+        axes[row][0].annotate(label, xy=(-0.32, 0.5), xycoords="axes fraction", rotation=90,
+                              va="center", ha="center", fontsize=12, fontweight="bold")
+    fig.suptitle("What marmoset calls look like in the spectrogram (same view as Audacity, 0-24 kHz)",
+                 fontsize=13)
+    fig.tight_layout(rect=(0.03, 0, 1, 0.97))
+    fig.savefig(a.out, dpi=105)
+    print(f"{len(PANELS)} panels -> {a.out}")
 
 
 if __name__ == "__main__":
