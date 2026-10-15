@@ -41,11 +41,11 @@ PANELS: List[Tuple[int, str, float, float, str]] = [
     (1, "raw", 19.9, 22.3, "NOT A CALL: clicks = thin vertical\nlines covering all frequencies"),
     (1, "clip_01.wav", 10.0, 13.0, "NOT A CALL: night background\n(nothing to label here)"),
     (1, "clip_05.wav", 30.0, 33.0, "NOT A CALL: night background\n(empty label file is a valid answer)"),
-    (1, "raw", 38.3, 40.3, "LEFT: faint call (label it)\nRIGHT: loud broadband burst (not a call)"),
+    (1, "raw", 38.3, 40.3, "faint calls before AND after a loud burst:\nlabel the calls, not the burst"),
     (2, "raw", 39.9, 42.4, "TRICKY: a real sweep among clicks\n-> label the sweep `c`, ignore the clicks"),
     (2, "raw", 28.0, 30.4, "TRICKY: evenly spaced flat lines\n(~3/6/8 kHz), unusual -> label `?`"),
     (2, "raw", 26.1, 29.6, "TRICKY: dense clicks hiding faint tones\n-> label only bands you can see, else `?`"),
-    (2, "raw", 62.5, 65.6, "TRICKY: two animals overlapping\n-> one label covering both"),
+    (2, "raw", 62.5, 65.6, "TRICKY: two bands at once (left) = overlap\n-> one label; the later sweep is separate"),
 ]
 
 
