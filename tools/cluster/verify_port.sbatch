@@ -11,4 +11,4 @@ source "$PROJECT_DIR/tools/cluster/env.sh"
 
 WAV="${1:-$RAW_RECORDINGS/Rec_2021_05_03/210503_001.WAV}"
 PKL="${2:-$TALIA_FIRSTTRIAL/Rec_2021_05_03/210503_001/call_indicies.pkl}"
-python "$PROJECT_DIR/tools/analysis/verify_talia_port.py" "$WAV" "$PKL" --strategy "${3:-mean}"
+python "$PROJECT_DIR/tools/analysis/verify_talia_port.py" "$WAV" "$PKL" --strategy "${3:-mean}" ${VERIFY_ARGS:-}

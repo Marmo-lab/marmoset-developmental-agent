@@ -137,66 +137,83 @@ def _stft(audio: np.ndarray, sample_rate: int, cfg: PreprocessingConfig) -> Tupl
     return freqs, times, np.abs(spec) * window_sum
 
 
-def _dilate(mask: np.ndarray) -> np.ndarray:
-    """True where ``mask`` or either immediate neighbour is True."""
-    out = mask.copy()
-    out[:-1] |= mask[1:]
-    out[1:] |= mask[:-1]
-    return out
-
-
-def _keep_runs_within_duration(mask: np.ndarray, cfg: PreprocessingConfig) -> np.ndarray:
-    """Talia's noise cancellation: group with gaps <= noise_merge_gap_s, keep runs whose
-    length lies strictly between noise_min_duration_s and noise_max_duration_s."""
-    out = np.zeros_like(mask)
-    idx = np.flatnonzero(mask)
+def _consecutive_series(idx: np.ndarray, max_gap: int) -> list:
+    """Port of her ``find_consecutive_series``: split sorted indices where the gap
+    exceeds ``max_gap`` and drop groups with <= 2 members. Groups keep only their
+    member indices -- gaps are *not* filled in."""
     if idx.size == 0:
-        return out
-    max_gap = cfg.to_frames(cfg.noise_merge_gap_s)
-    lo = cfg.to_frames(cfg.noise_min_duration_s)
-    hi = cfg.to_frames(cfg.noise_max_duration_s)
-    breaks = np.flatnonzero(np.diff(idx) > max_gap)
-    for s, e in zip(
-        np.concatenate([[idx[0]], idx[breaks + 1]]),
-        np.concatenate([idx[breaks], [idx[-1]]]),
-    ):
-        if lo < (e - s + 1) < hi:
-            out[s : e + 1] = True
-    return out
+        return []
+    groups = np.split(idx, np.flatnonzero(np.diff(idx) > max_gap) + 1)
+    return [g for g in groups if len(g) > 2]
 
 
 def _talia_frame_activity(
     audio: np.ndarray, sample_rate: int, cfg: PreprocessingConfig
 ) -> FrameActivity:
-    """Port of ``segment_processor.py``'s freq_range / bandwidth frame classifier."""
-    freqs, times, mag = _stft(audio, sample_rate, cfg)
+    """Line-by-line port of ``segment_processor.py`` (calculate_spectrogram,
+    extract_features, cluster_frame_features), read from source in
+    ``gmslm_audit/code_mirror/MonkeyPhones/code/didisDATA/refactored_code``.
+
+    It reproduces her behaviour including its quirks, because the point of this path
+    is to be checked against her ``call_indicies.pkl``:
+
+    * the STFT is ``librosa.stft`` with ``center=True``, so frame ``t`` is centred on
+      sample ``t * hop`` -- which is how ``save_calls`` maps frames back to samples;
+    * bandwidth bands are the *open* intervals ``(j - 1000, j)`` for
+      ``j in range(MIN_BANDWIDTH, MAX_BANDWIDTH, 1000)``, i.e. 2-10 kHz, not 3-11;
+    * a frame's sub-threshold bins are filled with the mean surviving frequency before
+      the band test (``find_max_and_min_freqs_by_amp``), so that mean can occupy one
+      extra band;
+    * a frame "has enough bandwidth" only if it *and* a neighbour are non-empty, and
+      the first and last frames of a chunk never qualify;
+    * the narrow-high class excludes frames already classed broadband, and its noise
+      filter keeps groups by span (``last - first``), retaining member frames only.
+    """
+    import librosa
+
+    mag = np.abs(librosa.stft(audio.astype(np.float32), n_fft=cfg.n_fft, hop_length=cfg.hop_length))
+    freqs = librosa.fft_frequencies(sr=sample_rate, n_fft=cfg.n_fft)
+    n_frames = mag.shape[1]
+    times = np.arange(n_frames) * cfg.hop_length / sample_rate
     kept = mag > cfg.amp_threshold  # (F, T)
 
     # freq_range[t] = highest minus lowest surviving bin frequency, 0 if none survive.
     any_kept = kept.any(axis=0)
-    f_idx = np.arange(len(freqs))[:, None]
-    f_max = freqs[np.where(any_kept, (kept * f_idx).argmax(axis=0), 0)]
-    f_min = freqs[np.where(any_kept, np.where(kept, f_idx, len(freqs)).argmin(axis=0), 0)]
-    freq_range = np.where(any_kept, f_max - f_min, 0.0)
+    f_hi = np.where(kept, freqs[:, None], -np.inf).max(axis=0)
+    f_lo = np.where(kept, freqs[:, None], np.inf).min(axis=0)
+    freq_range = np.where(any_kept, f_hi - f_lo, 0.0)
 
-    # bandwidth[t] = number of occupied fixed-width bands inside the call band.
-    edges = np.arange(cfg.min_bandwidth_hz, cfg.max_bandwidth_hz + 1e-6, cfg.bandwidth_bin_width_hz)
-    bandwidth = np.zeros(len(times), dtype=np.int64)
-    for lo_hz, hi_hz in zip(edges[:-1], edges[1:]):
-        in_band = (freqs >= lo_hz) & (freqs < hi_hz)
-        if in_band.any():
-            bandwidth += kept[in_band].any(axis=0)
+    # Mean surviving (non-zero) frequency per frame; stands in for sub-threshold bins.
+    kept_nz = kept & (freqs[:, None] > 0)
+    n_nz = kept_nz.sum(axis=0)
+    mean_f = np.where(n_nz > 0, (kept_nz * freqs[:, None]).sum(axis=0) / np.maximum(n_nz, 1), 0.0)
+    has_fill = (n_nz > 0) & (~kept).any(axis=0)
 
-    qualifies = _dilate(bandwidth > 0)
-    broadband = cfg.bandwidth_bin_width_hz * bandwidth + cfg.min_bandwidth_hz < freq_range
-    narrow_low = (freq_range > 0) & (freq_range <= cfg.min_bandwidth_hz)
-    narrow_high = (freq_range > cfg.min_bandwidth_hz) & (bandwidth < cfg.narrowband_max_bins)
-    narrow_high = _keep_runs_within_duration(narrow_high & qualifies, cfg)
+    width = cfg.bandwidth_bin_width_hz
+    bandwidth = np.zeros(n_frames, dtype=np.int64)
+    for j in np.arange(cfg.min_bandwidth_hz, cfg.max_bandwidth_hz, width):
+        in_band = (freqs > j - width) & (freqs < j)
+        occupied = kept[in_band].any(axis=0) | (has_fill & (mean_f > j - width) & (mean_f < j))
+        bandwidth += occupied
 
-    active = (qualifies & (broadband | narrow_low)) | narrow_high
+    nonempty = bandwidth > 0
+    enough = np.zeros(n_frames, dtype=bool)
+    enough[1:-1] = nonempty[1:-1] & (nonempty[:-2] | nonempty[2:])
+
+    broadband = enough & (width * bandwidth + cfg.min_bandwidth_hz < freq_range)
+    narrow_low = enough & ~broadband & (freq_range <= cfg.min_freq_range_hz) & (freq_range != 0)
+    narrow_high_all = (enough & ~broadband & (freq_range > cfg.min_freq_range_hz)
+                       & (bandwidth < cfg.narrowband_max_bins))
+
+    lo, hi = cfg.to_frames(cfg.noise_min_duration_s), cfg.to_frames(cfg.noise_max_duration_s)
+    narrow_high = np.zeros(n_frames, dtype=bool)
+    for g in _consecutive_series(np.flatnonzero(narrow_high_all), cfg.to_frames(cfg.noise_merge_gap_s)):
+        if lo < g[-1] - g[0] < hi:
+            narrow_high[g] = True
+
     return FrameActivity(
         frame_times_s=times,
-        active=active,
+        active=broadband | narrow_low | narrow_high,
         hop_s=cfg.hop_length / sample_rate,
         freq_range_hz=freq_range,
         bandwidth_bins=bandwidth,

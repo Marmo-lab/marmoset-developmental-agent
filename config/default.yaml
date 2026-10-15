@@ -28,17 +28,18 @@ preprocessing:                     # [GmSLM] A.1-A.2, reconciled with [talia] vi
   frame_features: talia            # talia (validate against her call_indicies.pkl) | spectral (ours)
   # "talia" feature path -- segment_processor.py constants
   amp_threshold: 0.02
-  min_bandwidth_hz: 3000.0
+  min_bandwidth_hz: 3000.0         # loop bounds: bands counted are (j-1000, j), i.e. 2-10 kHz
   max_bandwidth_hz: 11000.0
   bandwidth_bin_width_hz: 1000.0
+  min_freq_range_hz: 3000.0        # MIN_FREQ_RANGE
   narrowband_max_bins: 6
   noise_merge_gap_s: 0.4644        # 20 frames; [GmSLM] rounds the noise rule to 0.5 s / 2 s
   noise_min_duration_s: 0.4644
   noise_max_duration_s: 1.8576
   bandwidth_crossing_hz: 1000.0
   max_bandwidth_crossings: 3
-  max_freq_range_jump_hz: 2000.0
-  freq_range_jump_window_s: 0.4644
+  abrupt_up_freq_range_hz: 2000.0  # reject SHORT candidates (span < 20 frames) ...
+  abrupt_up_max_span_s: 0.4644     # ... whose freq_range ever exceeds 2 kHz
   boundary_pad_s: 0.02268          # +-500 samples at 22050 Hz
   # "spectral" feature path (ours) -- calibrate against hand labels, not yet tuned
   bin_energy_threshold_db: 12.0
@@ -47,7 +48,7 @@ preprocessing:                     # [GmSLM] A.1-A.2, reconciled with [talia] vi
   min_spectral_variance_db2: 20.0
   # shared run grouping and duration limits
   merge_gap_s: 0.0929             # 4 frames
-  min_run_duration_s: 0.0697      # 2 frames
+  min_run_members: 3               # groups need > 2 member frames
   min_call_duration_s: 0.2322     # 10 frames; [GmSLM] rounds this to 0.25 s
   max_call_duration_s: 4.0        # [GmSLM] + [talia], exact agreement
   chunk_duration_s: 10.0          # [GmSLM] + [talia]

@@ -308,7 +308,8 @@ def test_talia_durations_round_trip_to_her_frame_counts():
     p = PreprocessingConfig()
     assert p.detection_sample_rate == 22_050 and p.hop_length == 512
     assert p.to_frames(p.min_call_duration_s) == 10  # paper rounds to 0.25 s
-    assert p.to_frames(p.min_run_duration_s) == 3  # "drop runs of <= 2 frames"
+    assert p.min_run_members == 3  # find_consecutive_series keeps groups with > 2 members
+    assert p.to_frames(p.abrupt_up_max_span_s) == 20  # DURATION_FOR_ABBRUPT_UP_CALC
     assert p.to_frames(p.merge_gap_s) == 4  # MAX_DISTANCE_BETWEEN_NEI_IN_CALLS
     assert p.to_frames(p.noise_merge_gap_s) == 20
     assert p.to_frames(p.noise_min_duration_s) == 20  # paper rounds to 0.5 s

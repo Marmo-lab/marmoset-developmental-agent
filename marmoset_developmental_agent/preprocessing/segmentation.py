@@ -1,11 +1,11 @@
 """Call extraction and 10 s chunking at 16 kHz (GmSLM Appendix A.1-A.2).
 
 Call detection groups consecutive vocal-active STFT frames (see ``filter_5khz.py``).
-Gaps shorter than ``merge_gap_s`` are bridged, so twitter syllables form one call;
-runs shorter than ``min_run_duration_s`` are dropped; boundaries are padded by
-``boundary_pad_s``; and a run survives only if its duration lies in
-``[min_call_duration_s, max_call_duration_s]`` and it passes the two shape rejections
-ported from Talia's ``filter_calls``. The paper's "calls are 0.25-4 s" is the rounded
+Gaps up to ``merge_gap_s`` are bridged, so twitter syllables form one call; groups with
+fewer than ``min_run_members`` frames are dropped; a group survives only if its unpadded
+frame span lies strictly inside (``min_call_duration_s``, ``max_call_duration_s``) and it
+passes the two shape rejections of Talia's ``filter_calls``; survivors are then padded by
+``boundary_pad_s``. All of this is ported from her source, not the audit's summary. The paper's "calls are 0.25-4 s" is the rounded
 form of the code's 0.2322-4 s; we follow the code (audit S7, tier A).
 
 Chunking follows GmSLM: each chunk is exactly ``chunk_duration_s`` (10 s) at 16 kHz
@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence
 
 import numpy as np
 
@@ -70,61 +70,72 @@ class Chunk:
         return len(self.audio())
 
 
-def _active_runs(activity: FrameActivity, cfg: PreprocessingConfig) -> List[Tuple[int, int]]:
-    """Inclusive (start, end) frame indices of active runs, bridging short gaps.
+def _frames(seconds: float, activity: FrameActivity) -> int:
+    """Seconds -> frame count at the hop the activity was actually computed with."""
+    return int(round(seconds / activity.hop_s))
 
-    Gaps up to ``merge_gap_s`` are bridged (so twitter syllables form one call) and runs
-    shorter than ``min_run_duration_s`` are dropped -- Talia's 4-frame gap / 2-frame
-    minimum, expressed in seconds (audit S3.1 step 3g).
+
+def _active_runs(activity: FrameActivity, cfg: PreprocessingConfig) -> List[np.ndarray]:
+    """Candidate calls as arrays of their *member* frame indices.
+
+    Port of her ``identify_suspected_frame_calls``: active frames are split wherever the
+    gap between consecutive members exceeds ``merge_gap_s`` (4 frames), and groups with
+    fewer than ``min_run_members`` members are dropped. Members are returned rather
+    than (start, end) because her shape rejections are computed over the member frames
+    only, not over the gaps between them.
     """
     idx = np.flatnonzero(activity.active)
     if idx.size == 0:
         return []
-    max_gap = cfg.to_frames(cfg.merge_gap_s)
-    breaks = np.flatnonzero(np.diff(idx) > max_gap + 1)
-    starts = np.concatenate([[idx[0]], idx[breaks + 1]])
-    ends = np.concatenate([idx[breaks], [idx[-1]]])
-    min_frames = cfg.to_frames(cfg.min_run_duration_s)
-    return [(int(s), int(e)) for s, e in zip(starts, ends) if (e - s + 1) > min_frames]
+    groups = np.split(idx, np.flatnonzero(np.diff(idx) > _frames(cfg.merge_gap_s, activity)) + 1)
+    return [g for g in groups if len(g) >= cfg.min_run_members]
 
 
-def _rejected_by_shape(
-    start: int, end: int, activity: FrameActivity, cfg: PreprocessingConfig
-) -> bool:
-    """Talia's two ``filter_calls`` shape rejections (audit S3.1 step 3h).
+def _rejected_by_shape(members: np.ndarray, activity: FrameActivity, cfg: PreprocessingConfig) -> bool:
+    """Her two ``filter_calls`` shape rejections, ported from source.
 
-    A run is rejected if its bandwidth crosses the ``bandwidth_crossing_hz`` line too
-    often (flickery, noise-like) or if ``freq_range`` jumps by more than
-    ``max_freq_range_jump_hz`` inside ``freq_range_jump_window_s`` (clicks, transients).
-    Only applies to the ``"talia"`` feature path, which populates these fields.
+    * **Bandwidth crossings.** Count how often the number of occupied bands crosses
+      ``bandwidth_crossing_hz / bandwidth_bin_width_hz`` (= 1 band) across the members;
+      reject at ``max_bandwidth_crossings`` (3) or more. Faithful to her use of
+      ``np.roll``, which also compares the last member with the first.
+    * **Abrupt up.** Reject a *short* candidate -- span under ``abrupt_up_max_span_s``
+      (20 frames) -- whose ``freq_range`` exceeds ``abrupt_up_freq_range_hz`` (2 kHz)
+      anywhere: a brief broadband click.
+
+    Only the ``"talia"`` feature path populates the fields these need; for the
+    ``"spectral"`` path nothing is rejected here.
     """
     if activity.bandwidth_bins is None or activity.freq_range_hz is None:
         return False
-    bw_hz = activity.bandwidth_bins[start : end + 1] * cfg.bandwidth_bin_width_hz
-    above = bw_hz > cfg.bandwidth_crossing_hz
-    if int(np.count_nonzero(np.diff(above.astype(np.int8)))) >= cfg.max_bandwidth_crossings:
+    bands = activity.bandwidth_bins[members]
+    thr = cfg.bandwidth_crossing_hz / cfg.bandwidth_bin_width_hz
+    prev = np.roll(bands, 1)
+    crossings = int(np.sum(((prev < thr) & (bands >= thr)) | ((prev >= thr) & (bands < thr))))
+    if crossings >= cfg.max_bandwidth_crossings:
         return True
-    fr = activity.freq_range_hz[start : end + 1]
-    w = max(1, cfg.to_frames(cfg.freq_range_jump_window_s))
-    for i in range(len(fr)):
-        window = fr[i : i + w + 1]
-        if window.size > 1 and (window.max() - window.min()) > cfg.max_freq_range_jump_hz:
-            return True
-    return False
+    span = int(members[-1] - members[0])
+    return bool(span < _frames(cfg.abrupt_up_max_span_s, activity)
+                and activity.freq_range_hz[members].max() > cfg.abrupt_up_freq_range_hz)
 
 
 def activity_to_calls(activity: FrameActivity, cfg: PreprocessingConfig) -> List[CallSegment]:
-    """Group active frames into calls and apply the duration and shape rejections."""
+    """Group active frames into calls, apply duration and shape rejections, then pad.
+
+    As in her ``filter_calls`` / ``save_calls``: duration is tested on the unpadded frame
+    span (``last - first``), strictly, against ``min_call_duration_s`` (10 frames) and
+    ``max_call_duration_s`` (4 s); only survivors are padded by ``boundary_pad_s``. The
+    call boundary is the first/last member's frame time.
+    """
     calls: List[CallSegment] = []
-    for s, e in _active_runs(activity, cfg):
-        # Frame centres -> approximate onset/offset (+-hop/2 around the run), then pad.
-        t0 = activity.frame_times_s[s] - activity.hop_s / 2 - cfg.boundary_pad_s
-        t1 = activity.frame_times_s[e] + activity.hop_s / 2 + cfg.boundary_pad_s
-        t0 = max(0.0, t0)
-        if not cfg.min_call_duration_s <= (t1 - t0) <= cfg.max_call_duration_s:
+    floor = _frames(cfg.min_call_duration_s, activity)
+    for members in _active_runs(activity, cfg):
+        span = int(members[-1] - members[0])
+        if not (span > floor and span * activity.hop_s < cfg.max_call_duration_s):
             continue
-        if _rejected_by_shape(s, e, activity, cfg):
+        if _rejected_by_shape(members, activity, cfg):
             continue
+        t0 = max(0.0, activity.frame_times_s[members[0]] - cfg.boundary_pad_s)
+        t1 = activity.frame_times_s[members[-1]] + cfg.boundary_pad_s
         calls.append(CallSegment(float(t0), float(t1)))
     return calls
 

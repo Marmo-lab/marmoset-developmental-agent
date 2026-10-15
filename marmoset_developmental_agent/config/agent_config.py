@@ -71,23 +71,32 @@ class PreprocessingConfig:
     #                 against hand labels once those exist.
     frame_features: Literal["talia", "spectral"] = "talia"
 
-    # --- "talia" feature path (audit S3.1 step 3) ------------------------------- #
-    amp_threshold: float = 0.02  # [talia] AMP_THRESHOLD on |STFT|
-    min_bandwidth_hz: float = 3_000.0  # [talia] MIN_BANDWIDTH
-    max_bandwidth_hz: float = 11_000.0  # [talia] MAX_BANDWIDTH
-    bandwidth_bin_width_hz: float = 1_000.0  # [talia] width of an "occupied band"
-    narrowband_max_bins: int = 6  # [talia] narrow-high class needs < 6 occupied bands
+    # --- "talia" feature path (segment_processor.py, read from source) ------------ #
+    amp_threshold: float = 0.02  # [talia] AMP_THRESHOLD on librosa |STFT|
+    # [talia] MIN_BANDWIDTH / MAX_BANDWIDTH. These are loop bounds, not band edges: she
+    # iterates j over range(3000, 11000, 1000) and tests the open band (j-1000, j), so
+    # the bands actually counted span 2-10 kHz. See filter_5khz._talia_frame_activity.
+    min_bandwidth_hz: float = 3_000.0
+    max_bandwidth_hz: float = 11_000.0
+    bandwidth_bin_width_hz: float = 1_000.0  # [talia] delta_freq_for_bandwidth_calc
+    min_freq_range_hz: float = 3_000.0  # [talia] MIN_FREQ_RANGE, splits narrow-low / -high
+    narrowband_max_bins: int = 6  # [talia] MINIMAL_BANDWIDTH_FOR_EQUAL_RANGE (< 6 bands)
     # [talia] Noise-cancellation on the narrow-high class: group with gaps <= 20 frames,
-    # keep runs of 20 < n < 80 frames. The paper rounds these to 0.5 s / 2 s.
+    # keep groups whose span (last - first) is 20 < span < 80 frames. The paper rounds
+    # these to 0.5 s / 2 s.
     noise_merge_gap_s: float = 0.4644
     noise_min_duration_s: float = 0.4644
     noise_max_duration_s: float = 1.8576
     # [talia] filter_calls rejections.
-    bandwidth_crossing_hz: float = 1_000.0  # threshold line for the crossing count
-    max_bandwidth_crossings: int = 3  # reject at >= this many crossings
-    max_freq_range_jump_hz: float = 2_000.0  # reject an abrupt freq_range jump ...
-    freq_range_jump_window_s: float = 0.4644  # ... within this window (20 frames)
-    boundary_pad_s: float = 0.02268  # [talia] +-500 samples at 22050 Hz
+    bandwidth_crossing_hz: float = 1_000.0  # BANDWIDTH_CROSSING_LINE (= 1 band)
+    max_bandwidth_crossings: int = 3  # LOW_THRESHOLD_FOR_BANDWIDTH_CROSSING; reject at >=
+    # "Abrupt up": reject a *short* candidate (span < 20 frames) whose freq_range ever
+    # exceeds 2 kHz -- i.e. a brief broadband click. Not a sliding-window jump test,
+    # which an earlier port of ours wrongly implemented from the audit's paraphrase and
+    # which rejected long calls instead.
+    abrupt_up_freq_range_hz: float = 2_000.0  # UPPER_THRESHOLD_FOR_ABBRUPT_UP
+    abrupt_up_max_span_s: float = 0.4644  # DURATION_FOR_ABBRUPT_UP_CALC = 20 frames
+    boundary_pad_s: float = 0.02268  # [talia] WRAPPING_SAMPLES, +-500 samples at 22050 Hz
 
     # --- "spectral" feature path (ours) ---------------------------------------- #
     # A time-frequency bin is "active" if it exceeds the per-bin noise floor
@@ -100,10 +109,15 @@ class PreprocessingConfig:
     min_spectral_variance_db2: float = 20.0  # [ours]
 
     # --- shared run grouping and duration limits -------------------------------- #
-    # [talia] Gaps <= 4 frames between active regions are bridged into one call.
+    # [talia] Gaps <= 4 frames between active frames are bridged into one call
+    # (find_consecutive_series splits where diff > 4).
     merge_gap_s: float = 0.0929
-    min_run_duration_s: float = 0.0697  # [talia] drop runs of <= 2 frames
-    # [talia] 10-frame floor; the paper rounds it to 0.25 s. Ceiling agrees exactly.
+    # [talia] find_consecutive_series drops groups with <= 2 *members*. A count of
+    # active frames, not a duration, so it is not stored in seconds.
+    min_run_members: int = 3
+    # [talia] Duration is tested on the unpadded frame span (last - first), strictly:
+    # span > 10 frames and span < 4 s. The paper rounds the floor to 0.25 s. Padding
+    # (boundary_pad_s) is applied only after these tests, as in her save_calls.
     min_call_duration_s: float = 0.2322
     max_call_duration_s: float = 4.0  # [paper] + [talia]
 
