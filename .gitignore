@@ -34,3 +34,6 @@ gmslm_sample/
 .DS_Store
 .idea/
 .vscode/
+
+# hand-labelling package (clips are large, regenerable; labels are imported to data/labels/)
+labeling/
