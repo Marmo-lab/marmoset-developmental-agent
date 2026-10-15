@@ -137,10 +137,15 @@ def pick_best_channel(
         samples: ``(n_samples, n_channels)`` -- a representative excerpt, not the whole
             file (the caller should concatenate a few windows spread across it).
     """
+    from scipy import signal
+
     x = np.asarray(samples, dtype=np.float64)
     if x.ndim == 1:
         return 0
-    env = np.abs(x.T)  # (n_channels, n_samples)
+    nyq = sample_rate / 2
+    lo, hi = band_hz[0] / nyq, min(band_hz[1], 0.95 * nyq) / nyq
+    sos = signal.butter(4, [lo, hi], btype="bandpass", output="sos")
+    env = np.abs(signal.sosfiltfilt(sos, x.T, axis=-1))  # (n_channels, n_samples), in-band
     peak = np.percentile(env, 99.9, axis=1)
     median = np.median(env, axis=1)
     return int(np.argmax(peak / (median + 1e-12)))
