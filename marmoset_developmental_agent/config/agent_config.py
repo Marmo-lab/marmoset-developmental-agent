@@ -126,6 +126,18 @@ class PreprocessingConfig:
     chunk_pre_pad_s: float = 0.1  # [ours]
     min_calls_per_chunk: int = 1  # [ours]
 
+    # --- night exclusion [ours] ------------------------------------------------- #
+    # Recording level tracks time of day (r = +0.859 over 54 files) and ~46% of the
+    # corpus is night audio with almost no calls. When enabled, calls whose wall-clock
+    # time falls in [night_start_hour, night_end_hour) -- a window that wraps midnight --
+    # are dropped, and recordings lying entirely inside it are skipped without running
+    # detection. Raw files are never touched. Off by default: whether to enable it is
+    # decided from the night clips in the hand-labelled set (are there real calls at
+    # night, and does the detector raise false alarms there?).
+    exclude_night: bool = False
+    night_start_hour: float = 19.0
+    night_end_hour: float = 6.0
+
     def hop_s(self) -> float:
         """Seconds per STFT frame at the detection rate."""
         return self.hop_length / self.detection_sample_rate

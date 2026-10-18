@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import math
 
@@ -409,3 +410,53 @@ def test_unit_sweep_defaults_and_normalised_surprisal():
                          "zero_shot": {"Shuffle": {"accuracy": 0.5}}})
         assert row["normalised_surprisal"] == pytest.approx(1.0)
         assert row["zero_shot"]["Shuffle"] == 0.5
+
+
+# --------------------------------------------------------------------------- #
+# Night exclusion
+# --------------------------------------------------------------------------- #
+def test_night_window_wraps_midnight():
+    from marmoset_developmental_agent.preprocessing.segmentation import in_night_window
+
+    p = PreprocessingConfig()  # 19:00 -> 06:00
+    at = lambda h, m=0: dt.datetime(2021, 6, 1, h, m)  # noqa: E731
+    assert in_night_window(at(23), p) and in_night_window(at(0), p) and in_night_window(at(5, 59), p)
+    assert in_night_window(at(19), p)
+    assert not in_night_window(at(6), p) and not in_night_window(at(12), p) and not in_night_window(at(18, 59), p)
+    q = PreprocessingConfig(night_start_hour=0, night_end_hour=5)  # non-wrapping window
+    assert in_night_window(at(3), q) and not in_night_window(at(23), q)
+
+
+def _burst_recording(start: dt.datetime, seconds: float = 20.0):
+    from marmoset_developmental_agent.preprocessing.dataset_builder import Recording
+
+    sr = 48_000
+    wav = np.zeros(int(seconds * sr), np.float32)
+    for k in range(2, int(seconds) - 2, 4):  # a 0.5 s 7 kHz "call" every 4 s
+        wav += _tone_burst(sr, 0.5, 7_000, k, seconds)
+    return Recording(audio=wav, sample_rate=sr, start_time=start, recording_id="night_test")
+
+
+def test_exclude_night_drops_night_and_keeps_day():
+    from marmoset_developmental_agent.preprocessing.dataset_builder import preprocess_recording
+
+    on = PreprocessingConfig(frame_features="spectral", exclude_night=True)
+    off = dataclasses.replace(on, exclude_night=False)
+    night = _burst_recording(dt.datetime(2021, 6, 1, 23, 0))
+    day = _burst_recording(dt.datetime(2021, 6, 1, 12, 0))
+    assert preprocess_recording(night, off)[0], "fixture should produce chunks with the option off"
+    assert preprocess_recording(night, on)[0] == []
+    assert len(preprocess_recording(day, on)[0]) == len(preprocess_recording(day, off)[0])
+
+
+def test_exclude_night_trims_a_recording_that_straddles_dusk():
+    from marmoset_developmental_agent.preprocessing.dataset_builder import preprocess_recording
+    from marmoset_developmental_agent.preprocessing.segmentation import recording_entirely_at_night
+
+    on = PreprocessingConfig(frame_features="spectral", exclude_night=True)
+    rec = _burst_recording(dt.datetime(2021, 6, 1, 18, 59, 50), seconds=20.0)  # dusk at +10 s
+    assert not recording_entirely_at_night(rec.start_time, 20.0, on)
+    for chunk in preprocess_recording(rec, on)[0]:
+        for call in chunk.calls:
+            onset = chunk.start_time + dt.timedelta(seconds=call.start_s)
+            assert onset.time() < dt.time(19, 0)

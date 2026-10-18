@@ -36,7 +36,9 @@ from marmoset_developmental_agent.preprocessing.segmentation import (
     activity_to_calls,
     chunk_recording,
     detection_scores,
+    drop_night_calls,
     label_calls_from_annotations,
+    recording_entirely_at_night,
 )
 
 logger = logging.getLogger(__name__)
@@ -138,13 +140,25 @@ def preprocess_recording(
 
     ``preprocess_waveform`` owns both rate conversions (detection rate for the
     detector, target rate for the audio), so there is no resampling here.
+
+    With ``cfg.exclude_night``, a recording lying entirely in the night window is
+    skipped before detection (that is the compute saving), and night calls are dropped
+    from the rest. Ground-truth annotations are filtered by the same rule, so detection
+    scores are measured on the audio the pipeline actually uses.
     """
+    annotations = list(rec.annotations)
+    if cfg.exclude_night:
+        if recording_entirely_at_night(rec.start_time, len(rec.audio) / rec.sample_rate, cfg):
+            return [], {}
+        annotations = drop_night_calls(annotations, rec.start_time, cfg)
     audio_16k, activity = preprocess_waveform(rec.audio, rec.sample_rate, cfg)
     calls = activity_to_calls(activity, cfg)
+    if cfg.exclude_night:
+        calls = drop_night_calls(calls, rec.start_time, cfg)
     stats: Dict[str, float] = {}
-    if rec.annotations:
-        stats = detection_scores(calls, rec.annotations)
-        calls = label_calls_from_annotations(calls, rec.annotations)
+    if annotations:
+        stats = detection_scores(calls, annotations)
+        calls = label_calls_from_annotations(calls, annotations)
     chunks = chunk_recording(audio_16k, calls, cfg, rec.recording_id, rec.start_time, rec.day)
     return chunks, stats
 

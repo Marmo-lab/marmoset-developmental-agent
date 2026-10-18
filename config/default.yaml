@@ -52,6 +52,9 @@ preprocessing:                     # [GmSLM] A.1-A.2, reconciled with [talia] vi
   min_call_duration_s: 0.2322     # 10 frames; [GmSLM] rounds this to 0.25 s
   max_call_duration_s: 4.0        # [GmSLM] + [talia], exact agreement
   chunk_duration_s: 10.0          # [GmSLM] + [talia]
+  exclude_night: false            # [ours] decide from the night clips in the hand labels
+  night_start_hour: 19.0
+  night_end_hour: 6.0
 
 exposure:                          # [1kd] data_preparation/data_examples/daily_hours_per_month.json
   hours_per_day_by_period: [2, 2, 2, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8]

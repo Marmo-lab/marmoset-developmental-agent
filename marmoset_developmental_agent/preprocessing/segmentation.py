@@ -140,6 +140,36 @@ def activity_to_calls(activity: FrameActivity, cfg: PreprocessingConfig) -> List
     return calls
 
 
+def in_night_window(t: dt.datetime, cfg: PreprocessingConfig) -> bool:
+    """True if wall-clock time ``t`` lies in [night_start_hour, night_end_hour).
+
+    The window may wrap midnight (19 -> 6 is the default); a non-wrapping window such
+    as 0 -> 5 also works.
+    """
+    h = t.hour + t.minute / 60 + t.second / 3600
+    lo, hi = cfg.night_start_hour, cfg.night_end_hour
+    return (lo <= h or h < hi) if lo > hi else (lo <= h < hi)
+
+
+def recording_entirely_at_night(start: dt.datetime, duration_s: float, cfg: PreprocessingConfig) -> bool:
+    """True if every minute of a recording falls inside the night window.
+
+    Checked on a one-minute grid (plus the last instant), which is exact for any
+    window whose edges sit on whole minutes. Used to skip detection outright.
+    """
+    n = int(duration_s // 60)
+    stamps = [start + dt.timedelta(minutes=m) for m in range(n + 1)]
+    stamps.append(start + dt.timedelta(seconds=duration_s))
+    return all(in_night_window(t, cfg) for t in stamps)
+
+
+def drop_night_calls(
+    calls: Sequence[CallSegment], start: dt.datetime, cfg: PreprocessingConfig
+) -> List[CallSegment]:
+    """Keep only calls whose onset (recording start + ``start_s``) is outside the night."""
+    return [c for c in calls if not in_night_window(start + dt.timedelta(seconds=c.start_s), cfg)]
+
+
 def chunk_recording(
     audio_16k: np.ndarray,
     calls: Sequence[CallSegment],
