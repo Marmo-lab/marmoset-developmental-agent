@@ -10,4 +10,5 @@ pyyaml>=6.0           # 6.0.2
 matplotlib>=3.7       # tools/labels/make_guide.py only
 pandas>=2.0           # reading Talia's pickled artifacts (call_indicies.pkl is a DataFrame)
 pytest>=8.0           # 9.1.1
+ruff>=0.6             # 0.17.1 (lint; config in pyproject.toml)
 # torchaudio is NOT required (resampling uses scipy.signal.resample_poly)

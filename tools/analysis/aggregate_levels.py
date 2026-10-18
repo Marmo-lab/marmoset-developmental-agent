@@ -71,20 +71,20 @@ def main() -> None:
 
     n = len(rows)
     blind = [r for r in rows if r["zero_mean"] >= 0.5 * r["n"]]
-    print(f"\n--- Q1: is the absolute threshold dropping data corpus-wide? ---")
+    print("\n--- Q1: is the absolute threshold dropping data corpus-wide? ---")
     print(f"files where the 4-ch mean is silent in >=50% of windows: {len(blind)}/{n}")
     print(f"max |STFT| below the 0.02 threshold in:                  "
           f"{sum(r['maxmag'] < 0.02 for r in rows)}/{n} files")
 
     g = np.array([r["gain"] for r in rows if np.isfinite(r["gain"])])
     better = sum(r["zero_best"] < r["zero_mean"] for r in rows)
-    print(f"\n--- Q2: does the best single capsule beat the 4-capsule mean? ---")
+    print("\n--- Q2: does the best single capsule beat the 4-capsule mean? ---")
     print(f"files where best capsule has fewer silent windows: {better}/{n}")
     if g.size:
         print(f"bin-survival gain  median {np.median(g):.2f}x   "
               f"min {g.min():.2f}x   max {g.max():.2f}x")
 
-    print(f"\n--- gain change or behaviour change? ---")
+    print("\n--- gain change or behaviour change? ---")
     fl = np.array([r["floor_db"] for r in rows])
     pk = np.array([r["peak_db"] for r in rows])
     dr = np.array([r["dr_db"] for r in rows])

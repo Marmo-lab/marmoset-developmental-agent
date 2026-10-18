@@ -46,7 +46,7 @@ def normalise(labels: List[Tuple[float, float, str]]) -> Tuple[List[Tuple[float,
 
     Returns ``(labels, n_dropped, n_merged)``.
     """
-    kept = [l for l in sorted(labels) if l[1] - l[0] >= MIN_LABEL_S]
+    kept = [lab for lab in sorted(labels) if lab[1] - lab[0] >= MIN_LABEL_S]
     dropped = len(labels) - len(kept)
     out: List[Tuple[float, float, str]] = []
     merged = 0

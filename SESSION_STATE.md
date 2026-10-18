@@ -17,7 +17,7 @@ auditing Talia Sternberg's legacy tree.
 ### Done
 
 - **Audit reconciled into code.** Every Stage-1 constant in `PreprocessingConfig` is
-  tagged `[paper]` / `[talia]` / `[ours]` under a four-tier policy (see `CLAUDE.md`).
+  tagged `[paper]` / `[talia]` / `[ours]` under a four-tier policy (see `docs/CONVENTIONS.md`).
   Durations are in seconds, not STFT frames; a test pins each back to her frame counts.
 - **Detector is switchable** via `frame_features`: `"talia"` (faithful port of
   `segment_processor.py`) vs `"spectral"` (ours, level-relative). 27 tests pass;

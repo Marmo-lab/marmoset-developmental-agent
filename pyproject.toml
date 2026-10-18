@@ -1,0 +1,18 @@
+# Tool configuration only; the project is not packaged.
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+extend-exclude = ["references", "gmslm_audit", "gmslm_sample", "labeling", "outputs"]
+
+[tool.ruff.lint]
+# Bug-finding rules only: pyflakes (F), pycodestyle errors (E4/E7/E9), bugbear (B).
+# No formatter and no line-length rule -- style is not a review failure (REVIEW.md).
+select = ["E4", "E7", "E9", "F", "B"]
+ignore = [
+    "B905",  # zip() without strict=: noisy here; lengths are checked where it matters
+    "E702",  # one-line `a; b` statements in plotting scripts are style, not bugs
+]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["torch.device"]

@@ -61,7 +61,7 @@ def shuffle_calls(wav: np.ndarray, calls: Sequence[CallSegment], sr: int, rng: n
     while np.all(perm == np.arange(len(spans))):
         perm = rng.permutation(len(spans))
     pieces = [wav[: spans[0][0]]]
-    for slot, (s, e) in enumerate(spans):
+    for slot, (_s, e) in enumerate(spans):
         pieces.append(snippets[perm[slot]])
         nxt = spans[slot + 1][0] if slot + 1 < len(spans) else len(wav)
         pieces.append(wav[e:nxt])

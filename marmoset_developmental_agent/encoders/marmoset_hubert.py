@@ -22,7 +22,7 @@ Repeated units are preserved (see ``base_encoder`` no-dedup rule).
 from __future__ import annotations
 
 import logging
-from typing import Iterable, Optional
+from typing import Iterable
 
 import numpy as np
 import torch
