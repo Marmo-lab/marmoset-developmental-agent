@@ -4,14 +4,16 @@ Audacity's "Export Labels" writes one line per label, ``start<TAB>end<TAB>text``
 seconds; if a spectral selection was used, each label is followed by a line starting
 with a backslash that carries the frequency range, which is ignored here. Label text
 follows LABELING.md: ``c`` (call), ``?`` (unsure), ``n`` (non-call event); an empty
-label is treated as ``c``.
+label is treated as ``c``. A label ``none`` marks a clip that was checked and holds no
+calls -- needed because Audacity refuses to export an empty label track. ``none``
+labels are dropped; the clip still counts as labelled.
 
 ``clips.csv`` (from make_clips.py) maps each clip to its source recording and offset,
 so every label is also expressed as start/end sample indices at the raw file's native
 rate -- the same coordinates as Talia's call_indicies.pkl and our detector output.
 
 A clip with an exported but empty label file is kept as "labelled, no calls" (it shows
-up in ``--summary`` with zero calls); a clip with no file at all is "not labelled yet".
+up in the printed count); a clip with no file at all is "not labelled yet".
 
 Usage:
     python tools/labels/import_audacity.py labeling/clips.csv labeling/labels \
@@ -26,6 +28,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 VALID = {"c", "?", "n"}
+NO_CALLS = "none"
 NATIVE_SR = 48_000
 
 
@@ -37,8 +40,10 @@ def read_audacity(path: Path) -> List[Tuple[float, float, str]]:
         parts = line.split("\t")
         start, end = float(parts[0]), float(parts[1])
         text = (parts[2].strip().lower() if len(parts) > 2 else "") or "c"
+        if text == NO_CALLS:
+            continue
         if text not in VALID:
-            raise ValueError(f"{path.name}: label {text!r} not one of {sorted(VALID)}")
+            raise ValueError(f"{path.name}: label {text!r} not one of {sorted(VALID)} or {NO_CALLS!r}")
         if end < start:
             start, end = end, start
         out.append((start, end, text))

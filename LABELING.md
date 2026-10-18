@@ -53,6 +53,7 @@ fine and probably better.
 | Two animals calling at once, overlapping | one label covering both, `c` |
 | A call cut off by the start or end of the clip | label it anyway |
 | A loud, obvious non-call (door, cage rattle, human voice) | optional: label `n` |
+| The whole clip has no calls at all | one label `none` anywhere, then export |
 | Faint call you can see but barely hear | label it (`c` or `?`) |
 
 - Boundaries within about **50 ms** are fine; don't fuss over the exact edge.
@@ -60,8 +61,10 @@ fine and probably better.
   as a false one, so an unlabelled call makes the scores wrong.
 - Please label **without** looking at any detector output, so the labels measure the
   detectors instead of echoing them.
-- Night clips are often completely empty. An empty label file is a valid, useful answer
-  (it tells us how many false alarms the detectors raise in silence). Export it anyway.
+- Night clips are often completely empty. "No calls" is a valid, useful answer (it tells
+  us how many false alarms the detectors raise in silence). Audacity won't export an
+  empty label track, so: click anywhere in the clip, press `Cmd+B`, type **`none`**,
+  and export as usual. That one label means "I checked this clip, nothing here".
 
 ## When you're done (or partly done)
 
