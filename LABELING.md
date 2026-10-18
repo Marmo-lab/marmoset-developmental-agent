@@ -54,7 +54,7 @@ fine and probably better.
 | A call cut off by the start or end of the clip | label it anyway |
 | A loud, obvious non-call (door, cage rattle, human voice) | optional: label `n` |
 | The whole clip has no calls at all | one label `none` anywhere, then export |
-| Faint call you can see but barely hear | label it (`c` or `?`) |
+| Something visible in the spectrogram that you can't hear as a call | don't label it: the labeller's ear decides (anything unlabelled counts as noise) |
 
 - Boundaries within about **50 ms** are fine; don't fuss over the exact edge.
 - **Label every call in the clip.** A missed call counts against the detector as much
