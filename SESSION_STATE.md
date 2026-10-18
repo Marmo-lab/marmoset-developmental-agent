@@ -5,7 +5,7 @@ lands. Read this first on reconnect: it should be enough to resume without re-de
 anything. Long-lived decisions live in `OPEN_DECISIONS.md`; this file is "where are we
 right now".
 
-**Last updated:** 2026-10-15
+**Last updated:** 2026-10-18
 
 ---
 
@@ -82,9 +82,28 @@ auditing Talia Sternberg's legacy tree.
     suggest her real recall is lower than detection counts imply -- the labels will tell.
     The guide is therefore hand-picked, with no detector boundaries.
 
+13. **HAND LABELS COMPLETE + FIRST REAL DETECTOR SCORES (2026-10-18).** 30/30 clips,
+    319 labels; 13 clips empty (all 6 night + 7 day). Full numbers and method:
+    `docs/DETECTOR_EVAL.md`. Headlines (24 day clips, event-overlap matching):
+    - Talia's detector as she ran it: **P 0.97, R 0.40** (paper: 0.975 / 0.78). Only 69%
+      of labelled calls ever land in a training chunk. Recall on 0.3-0.5 s calls is 0.12.
+      Root cause, by ablation: mainly the 0.2322 s floor applied to the *detected core*
+      (shorter than the call), then the absolute threshold, then the abrupt-up rule.
+    - Spectral detector @15 dB: P 0.76-0.78, R 0.82-0.85; ~95% of calls reach a chunk.
+      Its false alarms are mostly vertical cage-noise transients in busy periods.
+    - Detection at 48 kHz with a 16 kHz band ceiling (new `spectral_max_freq_hz`):
+      consistent but small gain (+3 F1 on both clip halves). Calls at 10-12 kHz exist.
+    - Channel strategy is second-order: gain-invariantly beam ~ best_snr ~ max_energy ~
+      mean; per_channel adds 5-10 pts recall at 4x cost. The +2.45 dB of finding 9 does
+      not translate into detection gains. (The training-audio channel is a separate question.)
+    - Night: 0 calls in 6/6 night clips, 0 false alarms at sane settings -> pre-registered
+      rule branch 3 (exclusion optional, compute only).
+    - Top configs differ by < 5 F1 and swap rank between clip halves: need a held-out set
+      to choose finely.
+
 ### In progress
 
-Nothing running. Waiting on Zvi's labels. Cluster clone reset to the rewritten history
+Nothing running. Labels done (see finding 13). Cluster clone reset to the rewritten history
 (at 3127efb or later); local backup branch `backup/pre-trailer-removal-2026-10-15`.
 **Never add Claude co-author trailers to commits.**
 
@@ -101,7 +120,14 @@ Already landed and verified on real cluster data:
 S4.1 says it does not). It is still correctly rejected, on rate (250 kHz) and channel
 count (1), not on the missing timestamp.
 
-### Next
+### Next (as of 2026-10-18; supersedes the list below where they conflict)
+
+A. Spectral detector: add a broadband-transient rejection, then calibrate threshold /
+   floor / rate on the current labels. B. Label a fresh held-out set (~15 day clips) to
+   confirm. C. Wire `io/raw_reader` + channel strategy into `dataset_builder`. D. Full-corpus
+   detection array job -> chunks/day, night chunks, duration distribution vs labels.
+
+### Next (older)
 
 1. Run the gate on a few more files with `firstTrial` output (daytime, busy ones) to
    confirm the exact match generalises beyond one quiet file.
