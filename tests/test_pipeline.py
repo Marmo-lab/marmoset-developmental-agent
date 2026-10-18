@@ -371,6 +371,23 @@ def test_talia_path_populates_its_features_and_spectral_path_does_not():
     assert spectral.freq_range_hz is None
 
 
+def test_spectral_detector_sees_high_calls_only_at_a_higher_rate():
+    """A 13 kHz call is above the 11 kHz Nyquist of Talia's 22050 Hz detection rate; at
+    48 kHz with a 16 kHz band ceiling it is found, and a ceiling below it hides it again.
+    The noise floor is realistic (~31 dB broadband SNR): against the fixture's default near-silent
+    floor, the resampler's finite stop-band leaks a detectable alias even at 22050 Hz."""
+    wav = _tone_burst(48_000, dur_s=0.8, freq_hz=13_000, onset_s=1.0, total_s=3.0, noise=1e-3, amplitude=0.05)
+
+    def calls(**kw):
+        p = PreprocessingConfig(frame_features="spectral", **kw)
+        return activity_to_calls(preprocess_waveform(wav, 48_000, p)[1], p)
+
+    assert not calls()
+    found = calls(detection_sample_rate=48_000, spectral_max_freq_hz=16_000.0)
+    assert any(c.start_s < 1.4 and c.end_s > 1.4 for c in found)
+    assert not calls(detection_sample_rate=48_000, spectral_max_freq_hz=12_000.0)
+
+
 def test_detection_runs_at_detection_rate_not_native_rate():
     """Frame times must be spaced by hop / detection_sample_rate regardless of input rate."""
     p = PreprocessingConfig()

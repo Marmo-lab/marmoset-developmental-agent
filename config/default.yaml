@@ -46,6 +46,7 @@ preprocessing:                     # [GmSLM] A.1-A.2, reconciled with [talia] vi
   min_active_bin_fraction: 0.005
   max_active_bin_fraction: 0.35
   min_spectral_variance_db2: 20.0
+  spectral_max_freq_hz: null      # band ceiling; null = Nyquist of detection_sample_rate
   # shared run grouping and duration limits
   merge_gap_s: 0.0929             # 4 frames
   min_run_members: 3               # groups need > 2 member frames

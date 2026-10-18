@@ -3,7 +3,7 @@
 # scoring. Reads the raw recordings, writes only under $WORK_DIR.
 #
 #   sbatch tools/cluster/extract_clips.sbatch            # clips.csv from make_labeling
-#   rsync -a elsc-login-direct:marmoset_work/clip_audio/ labeling/clip_audio/
+#   rsync -a elsc-login-direct:marmoset_work/clip_audio48/ labeling/clip_audio48/
 #
 #SBATCH --job-name=extract-clips
 #SBATCH --partition=elscn.q
@@ -15,4 +15,4 @@ export PROJECT_DIR="${SLURM_SUBMIT_DIR:-$HOME/marmoset-developmental-agent}"
 source "$PROJECT_DIR/tools/cluster/env.sh"
 
 CLIPS="${1:-$WORK_DIR/labeling/clips.csv}"
-python "$PROJECT_DIR/tools/analysis/score_detectors.py" extract "$CLIPS" --out "$WORK_DIR/clip_audio"
+python "$PROJECT_DIR/tools/analysis/score_detectors.py" extract "$CLIPS" --out "$WORK_DIR/clip_audio48"

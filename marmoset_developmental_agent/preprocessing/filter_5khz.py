@@ -226,6 +226,8 @@ def _spectral_frame_activity(
     """Our noise-floor / density / variance frame classifier."""
     freqs, times, mag = _stft(audio, sample_rate, cfg)
     band = freqs >= cfg.highpass_cutoff_hz
+    if cfg.spectral_max_freq_hz is not None:
+        band &= freqs <= cfg.spectral_max_freq_hz
     s_db = 10 * np.log10(mag[band] ** 2 + 1e-12)  # (F_band, T)
     rel = s_db - np.median(s_db, axis=1, keepdims=True)
     density = (rel > cfg.bin_energy_threshold_db).mean(axis=0)

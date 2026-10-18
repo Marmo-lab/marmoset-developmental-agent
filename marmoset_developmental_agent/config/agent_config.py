@@ -107,6 +107,11 @@ class PreprocessingConfig:
     max_active_bin_fraction: float = 0.35  # [ours]
     # Frames whose (log) spectral variance is below this are treated as noise.
     min_spectral_variance_db2: float = 20.0  # [ours]
+    # Upper edge of the band the spectral detector looks at; None = Nyquist of the
+    # detection rate. Lets detection run at a higher rate (marmoset calls reach 12-16 kHz,
+    # above the 11 kHz Nyquist of 22050 Hz) without the empty band above the calls
+    # diluting the active-bin fractions.
+    spectral_max_freq_hz: Optional[float] = None  # [ours]
 
     # --- shared run grouping and duration limits -------------------------------- #
     # [talia] Gaps <= 4 frames between active frames are bridged into one call
