@@ -35,3 +35,17 @@ def test_rejects_unknown_label_text(tmp_path):
     f.write_text("1.0\t2.0\tphee\n")
     with pytest.raises(ValueError, match="not one of"):
         read_audacity(f)
+
+
+def test_normalise_drops_accidental_clicks_and_merges_touching_labels():
+    from import_audacity import normalise
+
+    raw = [(11.468, 11.795, "c"), (11.795, 11.980, "c"), (11.980, 12.357, "c"),  # touching
+           (26.829, 26.829, "c"),                                                # stray click
+           (30.0, 30.5, "?"), (30.55, 31.0, "c"),                                # gap 0.05 s
+           (40.0, 40.5, "c"), (41.0, 41.5, "c"),                                 # gap 0.5 s
+           (50.0, 50.5, "n"), (50.55, 51.0, "c")]                                # noise stays apart
+    out, dropped, merged = normalise(raw)
+    assert dropped == 1 and merged == 3
+    assert out == [(11.468, 12.357, "c"), (30.0, 31.0, "c"), (40.0, 40.5, "c"),
+                   (41.0, 41.5, "c"), (50.0, 50.5, "n"), (50.55, 51.0, "c")]

@@ -1,1 +1,6 @@
 clip_01
+clip_02
+clip_03
+clip_04
+clip_05
+clip_06

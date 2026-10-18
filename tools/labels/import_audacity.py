@@ -30,6 +30,34 @@ from typing import Dict, List, Tuple
 VALID = {"c", "?", "n"}
 NO_CALLS = "none"
 NATIVE_SR = 48_000
+# LABELING.md: syllables separated by < ~0.1 s form one call. Matches the detector's
+# merge gap (0.0929 s), so labels and detections are compared at the same granularity.
+MERGE_GAP_S = 0.1
+# A label shorter than this is an accidental Cmd+B on a click, not a call.
+MIN_LABEL_S = 0.03
+
+
+def normalise(labels: List[Tuple[float, float, str]]) -> Tuple[List[Tuple[float, float, str]], int, int]:
+    """Apply the labelling conventions mechanically, so the labeller doesn't have to.
+
+    Drops accidental near-zero-length labels and merges call labels (``c`` / ``?``)
+    whose gap is under MERGE_GAP_S -- including labels drawn touching each other. A
+    merged label is ``c`` if any part was ``c``. ``n`` labels are never merged with calls.
+
+    Returns ``(labels, n_dropped, n_merged)``.
+    """
+    kept = [l for l in sorted(labels) if l[1] - l[0] >= MIN_LABEL_S]
+    dropped = len(labels) - len(kept)
+    out: List[Tuple[float, float, str]] = []
+    merged = 0
+    for s, e, t in kept:
+        if out and t != "n" and out[-1][2] != "n" and s - out[-1][1] < MERGE_GAP_S:
+            ps, pe, pt = out[-1]
+            out[-1] = (ps, max(pe, e), "c" if "c" in (pt, t) else "?")
+            merged += 1
+        else:
+            out.append((s, e, t))
+    return out, dropped, merged
 
 
 def read_audacity(path: Path) -> List[Tuple[float, float, str]]:
@@ -64,7 +92,10 @@ def main() -> None:
         f = Path(a.labels_dir) / f"{cid}.txt"
         if not f.exists():
             continue
-        labels = read_audacity(f)
+        labels, n_drop, n_merge = normalise(read_audacity(f))
+        if n_drop or n_merge:
+            print(f"  {cid}: dropped {n_drop} accidental near-zero label(s), "
+                  f"merged {n_merge} label(s) closer than {MERGE_GAP_S} s")
         done.append(cid)
         if not labels:
             empty.append(cid)
