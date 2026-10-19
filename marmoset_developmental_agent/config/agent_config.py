@@ -112,6 +112,18 @@ class PreprocessingConfig:
     # above the 11 kHz Nyquist of 22050 Hz) without the empty band above the calls
     # diluting the active-bin fractions.
     spectral_max_freq_hz: Optional[float] = None  # [ours]
+    # Tonality rejection (docs/DETECTOR_EVAL.md findings 9-10). A frame is *tonal* if its
+    # loudest in-band bin is > tonal_peak_db above that bin's floor and the bins within
+    # tonal_peak_db of that peak span < tonal_max_bandwidth_hz: a narrow line, not a
+    # broadband smear. A call is rejected if fewer than min_tonal_fraction of the frames
+    # across its unpadded span are tonal. Cage-noise transients sit in the same band as
+    # calls (dominant-frequency AUC 0.38), but are broad: tonal fraction separates them
+    # with AUC 0.96. None disables the rejection. 0.5 is provisional, from the 30 labelled
+    # clips (12 dB, 48 kHz / 16 kHz: F1 0.74 -> 0.89, chunk P 0.72 -> 0.86); confirm on the
+    # held-out set.
+    tonal_peak_db: float = 10.0  # [ours]
+    tonal_max_bandwidth_hz: float = 2_000.0  # [ours]
+    min_tonal_fraction: Optional[float] = 0.5  # [ours]
 
     # --- shared run grouping and duration limits -------------------------------- #
     # [talia] Gaps <= 4 frames between active frames are bridged into one call

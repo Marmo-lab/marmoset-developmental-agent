@@ -47,7 +47,14 @@ Two interchangeable implementations of step 3 live here, selected by
         active[t]   = min_frac <= density[t] <= max_frac and variance[t] >= min_var
 
     Broadband transients (clicks, cage noise) have high density; silence and hiss have
-    low variance; tonal or FM marmoset calls are narrow-band and peaky.
+    low variance; tonal or FM marmoset calls are narrow-band and peaky. Per frame it also
+    records whether the frame is tonal,
+
+        peak[t]   = max_f (S_db[f, t] - floor[f])
+        width[t]  = bandwidth of the bins within tonal_peak_db of peak[t]
+        tonal[t]  = peak[t] > tonal_peak_db and width[t] < tonal_max_bandwidth_hz
+
+    which ``segmentation.py`` uses to reject calls that are mostly not tonal.
 
 Note that detection runs at ``detection_sample_rate`` (22050 Hz, reproducing librosa's
 default resample in her code), not at the recordings' native 48 kHz, and that the
@@ -86,6 +93,7 @@ class FrameActivity:
     bandwidth_bins: Optional[np.ndarray] = None  # (T,) int, count of occupied bands
     density: Optional[np.ndarray] = None  # (T,) fraction of above-floor bins
     variance_db2: Optional[np.ndarray] = None  # (T,) spectral variance in dB^2
+    tonal: Optional[np.ndarray] = None  # (T,) bool, narrow-line frame
 
 
 def highpass_filter(
@@ -232,6 +240,9 @@ def _spectral_frame_activity(
     rel = s_db - np.median(s_db, axis=1, keepdims=True)
     density = (rel > cfg.bin_energy_threshold_db).mean(axis=0)
     variance = rel.var(axis=0)
+    peak = rel.max(axis=0)
+    width_hz = (rel > peak - cfg.tonal_peak_db).sum(axis=0) * (freqs[1] - freqs[0])
+    tonal = (peak > cfg.tonal_peak_db) & (width_hz < cfg.tonal_max_bandwidth_hz)
     active = (
         (density >= cfg.min_active_bin_fraction)
         & (density <= cfg.max_active_bin_fraction)
@@ -243,6 +254,7 @@ def _spectral_frame_activity(
         hop_s=cfg.hop_length / sample_rate,
         density=density,
         variance_db2=variance,
+        tonal=tonal,
     )
 
 

@@ -4,7 +4,8 @@ Call detection groups consecutive vocal-active STFT frames (see ``filter_5khz.py
 Gaps up to ``merge_gap_s`` are bridged, so twitter syllables form one call; groups with
 fewer than ``min_run_members`` frames are dropped; a group survives only if its unpadded
 frame span lies strictly inside (``min_call_duration_s``, ``max_call_duration_s``) and it
-passes the two shape rejections of Talia's ``filter_calls``; survivors are then padded by
+passes the two shape rejections of Talia's ``filter_calls`` (or, on the spectral path, our
+tonality rejection); survivors are then padded by
 ``boundary_pad_s``. All of this is ported from her source, not the audit's summary. The paper's "calls are 0.25-4 s" is the rounded
 form of the code's 0.2322-4 s; we follow the code (audit S7, tier A).
 
@@ -102,9 +103,18 @@ def _rejected_by_shape(members: np.ndarray, activity: FrameActivity, cfg: Prepro
       (20 frames) -- whose ``freq_range`` exceeds ``abrupt_up_freq_range_hz`` (2 kHz)
       anywhere: a brief broadband click.
 
-    Only the ``"talia"`` feature path populates the fields these need; for the
-    ``"spectral"`` path nothing is rejected here.
+    Only the ``"talia"`` feature path populates the fields these need. The ``"spectral"``
+    path has its own rejection instead:
+
+    * **Not tonal** [ours]. With ``min_tonal_fraction`` set, reject a candidate if fewer
+      than that fraction of the frames from its first to its last member (gaps included)
+      are tonal (see ``filter_5khz.py``). Calls are narrow lines; the false alarms this
+      removes are broadband cage noise in the same band (docs/DETECTOR_EVAL.md finding 9).
     """
+    if activity.tonal is not None and cfg.min_tonal_fraction is not None:
+        span = activity.tonal[members[0]:members[-1] + 1]
+        if span.mean() < cfg.min_tonal_fraction:
+            return True
     if activity.bandwidth_bins is None or activity.freq_range_hz is None:
         return False
     bands = activity.bandwidth_bins[members]

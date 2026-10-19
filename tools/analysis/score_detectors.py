@@ -98,7 +98,21 @@ def _rate_sweep() -> List[Tuple[str, Overrides]]:
     return out
 
 
-SWEEPS = {"threshold": _threshold_sweep, "rate": _rate_sweep}
+def _tonal_sweep() -> List[Tuple[str, Overrides]]:
+    """Tonality rejection strength at 48 kHz with a 16 kHz ceiling, for two thresholds and
+    two call floors (docs/DETECTOR_EVAL.md finding 9). ``tonal-`` is the rejection off."""
+    out: List[Tuple[str, Overrides]] = []
+    for thr in (12.0, 15.0):
+        for floor in (0.2322, 0.1):
+            for mtf in (None, 0.2, 0.3, 0.4, 0.5, 0.6):
+                out.append((f"spectral@{thr:g}:floor{floor:g}:tonal{'-' if mtf is None else f'{mtf:g}'}",
+                            {"frame_features": "spectral", "bin_energy_threshold_db": thr,
+                             "min_call_duration_s": floor, "detection_sample_rate": 48_000,
+                             "spectral_max_freq_hz": 16_000.0, "min_tonal_fraction": mtf}))
+    return out
+
+
+SWEEPS = {"threshold": _threshold_sweep, "rate": _rate_sweep, "tonal": _tonal_sweep}
 
 
 # --------------------------------------------------------------------------- #

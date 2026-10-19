@@ -9,6 +9,7 @@ import math
 import numpy as np
 import pytest
 import torch
+from scipy import signal
 
 from marmoset_developmental_agent.agent.lr_scheduler import SigmoidLRScheduler, sigmoid_gate
 from marmoset_developmental_agent.agent.replay_buffer import SleepReplayBuffer
@@ -369,6 +370,7 @@ def test_talia_path_populates_its_features_and_spectral_path_does_not():
     spectral = preprocess_waveform(wav, 48_000, PreprocessingConfig(frame_features="spectral"))[1]
     assert spectral.density is not None and spectral.variance_db2 is not None
     assert spectral.freq_range_hz is None
+    assert talia.tonal is None and spectral.tonal is not None
 
 
 def test_spectral_detector_sees_high_calls_only_at_a_higher_rate():
@@ -386,6 +388,26 @@ def test_spectral_detector_sees_high_calls_only_at_a_higher_rate():
     found = calls(detection_sample_rate=48_000, spectral_max_freq_hz=16_000.0)
     assert any(c.start_s < 1.4 and c.end_s > 1.4 for c in found)
     assert not calls(detection_sample_rate=48_000, spectral_max_freq_hz=12_000.0)
+
+
+def test_tonality_rejection_keeps_an_fm_call_and_drops_band_noise():
+    """A 9 -> 7 kHz FM sweep and a 6-10 kHz noise burst of the same length both pass the
+    density / variance tests, as cage noise in the call band does on real data. Only the
+    sweep is a narrow line, so ``min_tonal_fraction`` removes the burst and keeps the call."""
+    sr, n = 48_000, int(0.6 * 48_000)
+    rng = np.random.default_rng(0)
+    wav = (1e-3 * rng.standard_normal(4 * sr)).astype(np.float32)
+    wav[sr:sr + n] += 0.05 * signal.chirp(np.arange(n) / sr, 9_000, 0.6, 7_000).astype(np.float32)
+    burst = signal.sosfilt(signal.butter(6, [6_000, 10_000], "bandpass", fs=sr, output="sos"), rng.standard_normal(n))
+    wav[int(2.5 * sr):int(2.5 * sr) + n] += (0.003 * burst / burst.std()).astype(np.float32)
+
+    def mids(**kw):
+        p = PreprocessingConfig(frame_features="spectral", detection_sample_rate=48_000,
+                                spectral_max_freq_hz=16_000.0, **kw)
+        return sorted(round((c.start_s + c.end_s) / 2) for c in activity_to_calls(preprocess_waveform(wav, sr, p)[1], p))
+
+    assert mids(min_tonal_fraction=None) == [1, 3]
+    assert mids(min_tonal_fraction=0.5) == [1]
 
 
 def test_detection_runs_at_detection_rate_not_native_rate():

@@ -47,6 +47,9 @@ preprocessing:                     # [GmSLM] A.1-A.2, reconciled with [talia] vi
   max_active_bin_fraction: 0.35
   min_spectral_variance_db2: 20.0
   spectral_max_freq_hz: null      # band ceiling; null = Nyquist of detection_sample_rate
+  tonal_peak_db: 10.0              # tonal frame: peak > floor + this, ...
+  tonal_max_bandwidth_hz: 2000.0   # ... and bins within this many dB of it span < 2 kHz
+  min_tonal_fraction: 0.5          # reject calls with fewer tonal frames; null = off (provisional)
   # shared run grouping and duration limits
   merge_gap_s: 0.0929             # 4 frames
   min_run_members: 3               # groups need > 2 member frames
