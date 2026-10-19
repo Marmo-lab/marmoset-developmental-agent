@@ -9,18 +9,9 @@ Background for every question: `gmslm_audit/GMSLM_CODE_AUDIT.md` and `SESSION_ST
 
 ---
 
-## Still open (10)
+## Still open (5)
 
 ### Labelling and evaluation
-
-**C11. Labelling conventions — are the rules in `LABELING.md` OK?**
-Before you start labelling, the conventions have to be fixed so the labels mean one
-thing. I wrote defaults into `LABELING.md`: mark onset/offset only (no call types);
-labels `c` = call, `?` = unsure, `n` = optional obvious non-call; one label over a
-syllable sequence whose gaps are < ~0.1 s (matches the detector's merge gap); overlapping
-callers = one label; calls cut by the clip edge still labelled.
-*Default:* keep those rules as written.
-Your answer:
 
 **C12. How is a detection matched to a label?**
 The paper never says, and the choice moves recall by roughly ±0.05, so it must be fixed
@@ -29,27 +20,12 @@ lenient (the detection's midpoint falls inside a label).
 *Default:* report both; use IoU ≥ 0.5 as the number decisions are based on.
 Your answer:
 
-**C13. What do we optimise the detector for — fewer false alarms or fewer misses?**
-Talia's detector was tuned for few false alarms (precision 0.975) at the cost of missing
-22% of calls (recall 0.78). For a language model, missed calls are lost structure, while
-occasional false alarms are noise it can average over.
-*Default:* maximise recall while keeping precision ≥ 0.95.
-Your answer:
-
 **C10. How much to label in total?** *(deferred by you — revisit after the first batch)*
 The first batch is 30 one-minute clips. After labelling those we'll know how long it
 takes and whether more is needed.
 Your answer:
 
 ### Experiment design
-
-**D18. PHEEDB — use it, and is the uneven stereo mix a bug?**
-Three ~1 h sessions with 4 named marmosets and real per-call labels. Uses: (1) an
-out-of-domain test set for the developmental trajectory (the code hook exists, unused);
-(2) free labelled calls for sanity checks. Also, Talia's scripts mix it to mono as
-`left + right/2` — the right channel is halved and the left is not.
-*Default:* use it for both; treat the uneven mix as a bug and use an even mix.
-Your answer:
 
 **D19. Vocoder — retrain it, or postpone?**
 Talia's trained vocoder (turns units back into sound) was trained on units from a
@@ -78,35 +54,6 @@ against PHEEDB call types, D18), units per note, effective vocabulary size (unig
 perplexity), the share of units spent on background, and normalised surprisal.
 Your answer:
 
-### Infrastructure and planning
-
-**E20. GPUs — which ones, and how many at once?**
-Already found from the cluster itself: CPU work runs on `elscn.q`; `gpu.q` allows 6-day
-jobs; arrays up to 1001 tasks; jobs **can be preempted** (so long runs need
-save-and-resume, which I'll build). Still open: `gpu.q` has only **one** A100 node
-(4 cards) but also **15 newer RTX PRO 6000 cards** (96 GB each), likely less contended.
-Can we realistically get 4 GPUs at once? And is it OK to use the RTX PRO 6000s?
-*Default:* use whatever is free, preferring RTX PRO 6000; plan for 1 GPU, add multi-GPU
-later if we can actually get 4.
-Your answer:
-
-**E21. Experiment logging — Weights & Biases (wandb) or plain files?**
-Talia's wandb logs are the only reason one of her training stages could be recovered at
-all. Do you have a wandb account to log to?
-*Default:* plain local log files + a results JSON per run now; add wandb if you have an account.
-Your answer:
-
-**E22. Who else will read or run this code?**
-Just us, or Talia / other lab members too? Decides how much effort goes into docs and
-ease of use versus speed.
-*Default:* just us for now, with docs good enough for a lab member to follow.
-Your answer:
-
-**E23. Any deadline or milestone to plan around?**
-A lab meeting, a talk, a submission, a committee review?
-*Default:* none — plan for steady progress.
-Your answer:
-
 ---
 
 ## Decided
@@ -126,3 +73,10 @@ Your answer:
 | D15 | Unit vocabulary sizes | Test k = 50, 100, 200. Implemented: `tools/sweep_units.py`. | 2026-10-15 |
 | D16 | Exposure schedule | Human curve for now; marmoset curve later. | 2026-10-15 |
 | D17 | Priority order | (c) fix preprocessing → (b) developmental agent. GmSLM reproduction is a comparison, not a requirement. | 2026-10-15 |
+| C11 | Labelling conventions | As written in `LABELING.md`, plus: the labeller's ear decides (unlabelled = noise). 30/30 clips labelled. | 2026-10-19 |
+| C13 | Optimise for misses or false alarms? | **Recall first.** False alarms inside a chunk that also holds a call cost nothing (the chunk keeps all its audio anyway); only chunks with *no* call dilute the data. Constraint: **chunk precision >= 0.85** (not event precision >= 0.95). Call-level evaluation sets use a stricter operating point or the hand labels. | 2026-10-19 |
+| D18 | PHEEDB | Use for both: out-of-domain trajectory test set and labelled sanity checks. Uneven `left + right/2` mix treated as a bug; use an even mix (default, not objected to). | 2026-10-19 |
+| E20 | GPUs / compute | Use whatever is free on `gpu.q` (A100s or RTX PRO 6000s); queues can be long, so plan for waiting and for preemption (save-and-resume). Any free CPU on the cluster is fair game. | 2026-10-19 |
+| E21 | Experiment logging | wandb: account opened. Compute nodes reach api.wandb.ai (checked 2026-10-19), so online mode works. Integration: optional `LoggingConfig` + thin logger, off in mock/tests. | 2026-10-19 |
+| E22 | Who reads the code? | Just us for now; docs good enough for a lab member to follow. | 2026-10-19 |
+| E23 | Deadline | None: steady progress. | 2026-10-19 |
