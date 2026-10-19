@@ -86,7 +86,21 @@ All numbers are on day clips, with `?` counted as calls unless noted.
      tonal ones are calls (`labeling/review/unlabelled_tonal_detections.wav`, items 3 and 5). So the measured precision
      stands and is not a lower bound.
 
-   Next: implement the filter in `filter_5khz.py` and re-run it through `score_detectors.py`.
+   **Implemented** as `min_tonal_fraction` (spectral path; `filter_5khz.py` computes the per-frame tonal flag,
+   `segmentation.py` rejects). Reproduce with `score_detectors.py score ... --sweep tonal --strategies mean`. Production
+   numbers (2048 / 512 STFT, 5–16 kHz band, `?` counted as calls):
+
+   | configuration (48k-16k) | P | R | F1 | chunk P | chunk R | F1 even / odd halves |
+   |---|---|---|---|---|---|---|
+   | @12, floor 0.23, no rejection | 0.62 | 0.92 | 0.74 | 0.72 | 0.96 | 0.74 / 0.75 |
+   | @12, floor 0.23, tonal ≥ 0.5 | 0.87 | 0.91 | 0.89 | 0.86 | 0.97 | 0.90 / 0.86 |
+   | @12, floor 0.23, tonal ≥ 0.6 | 0.91 | 0.85 | 0.88 | 0.93 | 0.96 | 0.88 / 0.84 |
+   | @15, floor 0.23, tonal ≥ 0.5 | 0.89 | 0.86 | 0.87 | 0.92 | 0.95 | 0.88 / 0.85 |
+   | @15, floor 0.23, tonal ≥ 0.6 | 0.92 | 0.84 | 0.88 | 0.97 | 0.94 | 0.88 / 0.85 |
+
+   Recall-first under the C13 constraint (chunk P ≥ 0.85) points to @12 / tonal 0.5, but its chunk P is 0.84 on the odd
+   half. @15 / tonal 0.5 leaves a margin. Default set provisionally to 0.5; choose between the two on the held-out set.
+   Night false alarms are 0 for every rejection ≥ 0.3.
 10. **The entrance-door beep passes the tonality filter.** It is a stationary harmonic stack (e.g. 2.8 / 5.6 / 8.4 kHz in
     clip_24 @ 1.9 s; a line near 8.6 kHz in clip_18) and is heard among the surviving false alarms. Two generic rules
     fail on the labelled detections (scratch analysis, 2026-10-19):

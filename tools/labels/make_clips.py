@@ -14,9 +14,16 @@ A sidecar ``clips.csv`` maps every clip back to its source file, offset, wall-cl
 and applied gain, so labels can be converted to absolute sample indices in the raw
 recordings.
 
+For a held-out test set, ``--exclude`` takes an earlier ``clips.csv``: its source
+recordings are skipped and its dates are treated as already used, so the new clips come
+from recordings (and, where possible, days) the detector was never calibrated on.
+
 Usage (on the cluster):
     python tools/labels/make_clips.py $WORK_DIR/manifests/recordings.csv \
         -o $WORK_DIR/labeling --day 24 --night 6
+    python tools/labels/make_clips.py $WORK_DIR/manifests/recordings.csv \
+        -o $WORK_DIR/labeling_heldout --day 15 --night 0 --seed 20261020 \
+        --exclude $WORK_DIR/labeling/clips.csv --prefix ho
 """
 
 from __future__ import annotations
@@ -48,9 +55,14 @@ def main() -> None:
     ap.add_argument("--day", type=int, default=24)
     ap.add_argument("--night", type=int, default=6)
     ap.add_argument("--seed", type=int, default=20261015)
+    ap.add_argument("--exclude", help="earlier clips.csv: skip its recordings, prefer other dates")
+    ap.add_argument("--prefix", default="clip", help="clip id prefix, e.g. ho for a held-out set")
     a = ap.parse_args()
 
-    rows = list(csv.DictReader(open(a.manifest)))
+    prior = list(csv.DictReader(open(a.exclude))) if a.exclude else []
+    skip = {r["source_path"] for r in prior}
+    prior_dates = {dt.datetime.fromisoformat(r["wall_time"]).date() for r in prior}
+    rows = [r for r in csv.DictReader(open(a.manifest)) if r["path"] not in skip]
     rng = random.Random(a.seed)
     picked = []
     for want, day in ((a.day, True), (a.night, False)):
@@ -65,12 +77,15 @@ def main() -> None:
             if is_day(t) == day:
                 pool.append((r, off, t))
         rng.shuffle(pool)
-        used_dates: set = set()
-        for r, off, t in pool:  # one clip per date first, then allow repeats
-            if t.date() not in used_dates:
-                picked.append((r, off, t)); used_dates.add(t.date())
-            if sum(1 for p in picked if is_day(p[2]) == day) == want:
-                break
+        used_dates: set = set(prior_dates)
+        mine: list = []
+        for r, off, t in pool:  # one clip per new date first ...
+            if len(mine) < want and t.date() not in used_dates:
+                mine.append((r, off, t)); used_dates.add(t.date())
+        for r, off, t in pool:  # ... then allow repeated dates, never the same recording twice
+            if len(mine) < want and all(r["path"] != m[0]["path"] for m in mine):
+                mine.append((r, off, t))
+        picked += mine
 
     out = Path(a.out); (out / "clips").mkdir(parents=True, exist_ok=True)
     picked.sort(key=lambda p: p[2])
@@ -87,11 +102,12 @@ def main() -> None:
             b = int(np.argmax(band_energy(beams, sr)))
             x = beams[b]
             gain = float(10 ** (-3 / 20) / (np.abs(x).max() + 1e-12))
-            name = f"clip_{i:02d}.wav"
+            cid = f"{a.prefix}_{i:02d}"
+            name = f"{cid}.wav"
             sf.write(out / "clips" / name, (x * gain).astype(np.float32), sr, subtype="PCM_16")
-            w.writerow([f"clip_{i:02d}", name, r["path"], f"{off:.3f}", CLIP_S,
+            w.writerow([cid, name, r["path"], f"{off:.3f}", CLIP_S,
                         t.isoformat(timespec="seconds"), int(is_day(t)), b, f"{gain:.3f}"])
-            print(f"clip_{i:02d}  {t:%Y-%m-%d %H:%M}  {'day' if is_day(t) else 'night'}  "
+            print(f"{cid}  {t:%Y-%m-%d %H:%M}  {'day' if is_day(t) else 'night'}  "
                   f"{Path(r['path']).parent.name}/{Path(r['path']).name} +{off:.0f}s  gain x{gain:.0f}")
     print(f"\n{len(picked)} clips -> {out}/clips, index {out}/clips.csv")
 
