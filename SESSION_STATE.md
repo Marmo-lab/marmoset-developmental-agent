@@ -124,8 +124,8 @@ count (1), not on the missing timestamp.
 
 A. Spectral detector: tonality filter validated in a scratch analysis (DETECTOR_EVAL finding 9:
    F1 0.82 -> 0.88, chunk P 0.86 -> 0.96). Next: implement it in `filter_5khz.py`, re-score,
-   calibrate threshold / floor / rate. The user is checking 16 unlabelled detections by ear
-   (labeling/review/unlabelled_tonal_detections.wav) and labels the held-out set on 2026-10-20. B. Label a fresh held-out set (~15 day clips) to
+   calibrate threshold / floor / rate. Ear check done: only 2/16 surviving unlabelled detections
+   are calls; door beeps survive the filter (finding 10, deferred). The user labels the held-out set on 2026-10-20. B. Label a fresh held-out set (~15 day clips) to
    confirm. C. Wire `io/raw_reader` + channel strategy into `dataset_builder`. D. Full-corpus
    detection array job -> chunks/day, night chunks, duration distribution vs labels.
 E. wandb is ready on the cluster (user logged in, entity

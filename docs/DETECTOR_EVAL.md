@@ -82,7 +82,17 @@ All numbers are on day clips, with `?` counted as calls unless noted.
    flat-line (machine-tone) rule removed only one detection, a true call, so it was dropped. Visual check
    (`labeling/review/tonality_filter_check.png`):
    - The real calls the filter drops are tonal notes inside a long detection that is mostly cage noise.
-   - Many unlabelled detections that survive have call-shaped FM contours, so measured precision is probably a lower
-     bound. The user is checking them by ear (`labeling/review/unlabelled_tonal_detections.wav`, 16 items, 40 s).
+   - Many unlabelled detections that survive look call-shaped in the spectrogram. Checked by ear, only 2 of the 16 most
+     tonal ones are calls (`labeling/review/unlabelled_tonal_detections.wav`, items 3 and 5). So the measured precision
+     stands and is not a lower bound.
 
    Next: implement the filter in `filter_5khz.py` and re-run it through `score_detectors.py`.
+10. **The entrance-door beep passes the tonality filter.** It is a stationary harmonic stack (e.g. 2.8 / 5.6 / 8.4 kHz in
+    clip_24 @ 1.9 s; a line near 8.6 kHz in clip_18) and is heard among the surviving false alarms. Two generic rules
+    fail on the labelled detections (scratch analysis, 2026-10-19):
+    - "Fixed peak frequency in ≥ 40% of frames" flags 17 survivors, and 12 of them are true calls: phees are near-flat too.
+    - "A 2.8 kHz line in ≥ 5 frames" flags 21, and 18 of them are true calls.
+
+    A beep is one fixed device sound, so an exact-frequency template is legitimate here, unlike call templates. It is
+    worth building only if the full-corpus run shows beeps are common. In the labelled set they are a handful of 520
+    detections.
