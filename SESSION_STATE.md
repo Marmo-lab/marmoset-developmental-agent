@@ -124,7 +124,11 @@ count (1), not on the missing timestamp.
 
 A. Spectral detector: tonality rejection implemented (`min_tonal_fraction`, provisional default
    0.5; DETECTOR_EVAL finding 9). Candidates: @12/tonal 0.5 (R 0.91, chunk P 0.86) vs @15/tonal 0.5
-   (R 0.86, chunk P 0.92), both 48k-16k, floor 0.23. Pick on the held-out set. Ear check done: only 2/16 surviving unlabelled detections
+   (R 0.86, chunk P 0.92), both 48k-16k, floor 0.23. Pick on the held-out set. Port gate re-run after
+   the change: 23/23 IoU 1.00.
+B'. Held-out set ready: 15 day clips `ho_01..ho_15` (new recordings, mostly new dates, seed
+   20261020) in `labeling_heldout/` (cluster: `$WORK_DIR/labeling_heldout`). User labels on
+   2026-10-20 under LABELING.md. Score it ONCE with the two candidates; do not tune on it. Ear check done: only 2/16 surviving unlabelled detections
    are calls; door beeps survive the filter (finding 10, deferred). The user labels the held-out set on 2026-10-20. B. Label a fresh held-out set (~15 day clips) to
    confirm. C. Wire `io/raw_reader` + channel strategy into `dataset_builder`. D. Full-corpus
    detection array job -> chunks/day, night chunks, duration distribution vs labels.

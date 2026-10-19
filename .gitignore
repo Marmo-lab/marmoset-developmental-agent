@@ -37,3 +37,4 @@ gmslm_sample/
 
 # hand-labelling package (clips are large, regenerable; labels are imported to data/labels/)
 labeling/
+labeling_heldout/
