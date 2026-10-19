@@ -5,7 +5,7 @@ lands. Read this first on reconnect: it should be enough to resume without re-de
 anything. Long-lived decisions live in `OPEN_DECISIONS.md`; this file is "where are we
 right now".
 
-**Last updated:** 2026-10-18
+**Last updated:** 2026-10-19
 
 ---
 
@@ -126,6 +126,9 @@ A. Spectral detector: add a broadband-transient rejection, then calibrate thresh
    floor / rate on the current labels. B. Label a fresh held-out set (~15 day clips) to
    confirm. C. Wire `io/raw_reader` + channel strategy into `dataset_builder`. D. Full-corpus
    detection array job -> chunks/day, night chunks, duration distribution vs labels.
+E. wandb is ready on the cluster (user logged in, entity
+   `zvimarmor-the-hebrew-university-of-jerusalem`, compute nodes reach the host). Build the
+   optional `LoggingConfig` + logger (E21) before the first GPU training run.
 
 ### Next (older)
 
