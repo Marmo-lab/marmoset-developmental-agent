@@ -9,7 +9,7 @@ Background for every question: `gmslm_audit/GMSLM_CODE_AUDIT.md` and `SESSION_ST
 
 ---
 
-## Still open (9)
+## Still open (10)
 
 ### Labelling and evaluation
 
@@ -57,6 +57,25 @@ different HuBERT layer than we'll use, so it will produce noise with ours. Retra
 costs ~2–4 GPU-days. It's only needed to *listen* to generated output, not to measure
 anything.
 *Default:* postpone, unless you need audible examples for a talk soon.
+Your answer:
+
+**D24. How many units? A data-driven prior from the call acoustics** *(raised 2026-10-19)*
+Idea: estimate a "phoneme-like" inventory in the calls and size the encoder from it, by
+analogy with the 1kd paper's units-vs-phonemes analysis. Note that analysis measures
+*alignment* (purity P(phone|unit), P(unit|phone); `references/hasson_dev/analysis/`),
+with a 512-entry codebook against ~39 English phones, i.e. ~13 units per phone, not a
+matching count. First measurement (`tools/analysis/call_inventory.py`, 298 labelled
+calls, `outputs/call_inventory.json`):
+- calls: median 0.56 s (= 28 units at 50 Hz), dominant 6.7-10.3 kHz; 69% have >= 2 notes.
+- **notes** (the phoneme analogue; median 0.09 s): BIC finds **~5-10 note types**.
+- **20 ms frames** (the encoder's grain): ~20-30 spectral states inside calls, ~5 in
+  background. Background is ~75% of day-clip time, so units are also spent on it.
+- These are lower bounds (crude 10-D features, 12k frames; BIC under-fits with little data).
+*Default:* keep the sweep around GmSLM's 50, widened at both ends to **k in {25, 50, 100,
+200}** (+ DINO-SR's 512, reporting how many codewords are actually used). Choose k by
+measured alignment, as in 1kd: unit purity against note types from this analysis (and
+against PHEEDB call types, D18), units per note, effective vocabulary size (unigram
+perplexity), the share of units spent on background, and normalised surprisal.
 Your answer:
 
 ### Infrastructure and planning
