@@ -58,3 +58,31 @@ All numbers are on day clips, with `?` counted as calls unless noted.
 6. **Channel strategy is second-order for detection.** Matched for gain (mean @0.01 vs beam @0.02), mean ≈ best_snr ≈ max_energy ≈ ambisonic_beam. per_channel (union over capsules) adds 5–10 points of recall at 4× the cost, for both detectors.
 7. **Night:** no calls in any of the 6 night clips, and 0 false alarms per minute for every configuration above. Under the pre-registered rule this is branch 3: exclusion is optional and saves compute only.
 8. **Uncertainty:** the top configurations differ by less than 5 F1 and change rank between the odd and even clip halves. Talia-as-run is worst on both halves (R 0.26 / 0.48). The fine choice needs a held-out set.
+9. **Tonality separates calls from false alarms; frequency does not** (2026-10-19, preliminary scratch analysis on the
+   rate-sweep detections, day clips). Per detection, on the 4-capsule mean at 48 kHz, 4–16 kHz, 10 ms frames: a frame
+   is *tonal* if its peak bin is > 10 dB above that bin's median and the band within 10 dB of the peak is < 2 kHz wide.
+
+   | feature (true vs false medians) | AUC |
+   |---|---|
+   | tonal-frame fraction (0.84 vs 0.21) | 0.96 |
+   | peak-to-band contrast (23.6 vs 13.7 dB) | 0.95 |
+   | -10 dB bandwidth (0.9 vs 3.2 kHz) | 0.94 (inverted) |
+   | peak-frequency continuity | 0.91 |
+   | dominant frequency (8.1 vs 9.1 kHz) | 0.38, i.e. useless |
+
+   A rule "tonal fraction ≥ threshold", with the threshold fit leave-one-clip-out to keep 97% of the true detections:
+
+   | configuration | before: P / R / chunk P / chunk R | after |
+   |---|---|---|
+   | spectral @15, 48k-16k, floor 0.23 | 0.77 / 0.87 / 0.86 / 0.95 | 0.92 / 0.85 / 0.96 / 0.95 |
+   | spectral @12, 48k-16k, floor 0.23 | 0.62 / 0.92 / 0.72 / 0.96 | 0.89 / 0.90 / 0.89 / 0.94 |
+   | spectral @12, 48k-16k, floor 0.10 | 0.46 / 0.99 / 0.63 / 1.00 | 0.75 / 0.97 / 0.79 / 0.99 |
+
+   F1 is stable across the clip halves. Variants (tonal-frame count, longest tonal run) are equivalent within noise. A
+   flat-line (machine-tone) rule removed only one detection, a true call, so it was dropped. Visual check
+   (`labeling/review/tonality_filter_check.png`):
+   - The real calls the filter drops are tonal notes inside a long detection that is mostly cage noise.
+   - Many unlabelled detections that survive have call-shaped FM contours, so measured precision is probably a lower
+     bound. The user is checking them by ear (`labeling/review/unlabelled_tonal_detections.wav`, 16 items, 40 s).
+
+   Next: implement the filter in `filter_5khz.py` and re-run it through `score_detectors.py`.
