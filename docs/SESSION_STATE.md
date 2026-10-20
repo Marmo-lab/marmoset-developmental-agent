@@ -129,11 +129,15 @@ gate 23/23 after the tonality change. Repo root tidied (docs in docs/, local mat
 The 1kD extraction pipeline is summarised in docs/UPSTREAM_1KD.md: the agent trains on TTS re-synthesis, not on
 recordings.
 
-A. Make the chosen detector the production default for colony runs: `frame_features: spectral`, 48 kHz / 16 kHz, 12 dB,
-   tonal 0.5. Talia's config stays available for the GmSLM comparison arm.
-B. Wire `io/raw_reader` + channel strategy into `dataset_builder` (streaming, not an eager mean mixdown).
-C. Full-corpus detection array job -> chunks/day, night chunks, duration distribution vs labels, door-beep count
-   (finding 10). Then the final night decision.
+A. DONE (0b0d794): `PreprocessingConfig()` is the chosen detector; `PreprocessingConfig.talia()` /
+   `config/gmslm_arm.yaml` = Talia's front-end (port gate and analysis tools use it). Held-out re-score identical.
+B. DONE (0b0d794): `preprocessing/streaming.py`: 60 s blocks + 5 s context, `CallRecord` catalogue (wall-clock time,
+   SNR, tonal fraction, dominant frequency + IQR), chunk audio read per window with `training_channel_strategy`
+   (ambisonic_beam; detection on mean). `dataset_builder` streams `RecordingFile`s.
+C. IN PROGRESS: `tools/corpus/detect_corpus.py` + `tools/cluster/detect_corpus.sbatch` (resumable array job, catalogue
+   only; chunk audio export is opt-in and needs ~100+ GB on the shared FS: ask first). Pilot = the 45 recordings
+   behind the labelled clips (`RUN=pilot`, job 63091739), then `summarize_corpus.py` with `--labels` checks the
+   production path reproduces the evaluated P/R. Then full corpus `RUN=v1 --array=0-135%16 --n-tasks 136`.
 D. Optional: D26 (floor 0.1) needs ~10 fresh clips.
 E. wandb: build `LoggingConfig` + logger (E21) before the first GPU training run.
 F. Frozen-HuBERT units + D24 metrics, then the agent.
