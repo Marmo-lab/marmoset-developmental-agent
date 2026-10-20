@@ -142,7 +142,11 @@ C. IN PROGRESS: `tools/corpus/detect_corpus.py` + `tools/cluster/detect_corpus.s
    R 0.88. Pilot also shows: calls per audio-hour ~0 from 19:00 to 05:00 and 350-1660 by day; detected durations
    match the labels except < 0.3 s (2.9% vs 12.3%, the known short-call gap, D26); median SNR 24 dB; no fixed-tone
    spike (no frequency bin above 8 flat calls in 45 h, so the door beep is rare). ~200 chunks per hour of day audio.
-   Full corpus submitted: `RUN=v1`, job 63100169 (136 tasks, 16 at once, ~3-4 h). Then summarize_corpus on v1.
+   2026-10-20, user decisions: night is not processed, and chunk audio is stored under `~/marmoset_work`. So `RUN=v1`
+   (job 63100169, catalogue only, night included) was cancelled at 59/2719 recordings and replaced by
+   `RUN=v2_day`: `--config config/corpus_day.yaml --export-audio`, 136 tasks, 16 at once. Outputs in
+   `~/marmoset_work/corpus/v2_day/` (calls/, files/, chunks/<recording_id>/*.wav + chunks.tsv). Next: summarize_corpus on
+   v2_day, then merge the per-recording chunks.tsv into one chronological manifest.tsv + day_sizes.json for training.
 D. Optional: D26 (floor 0.1) needs ~10 fresh clips.
 E. wandb: build `LoggingConfig` + logger (E21) before the first GPU training run.
 F. Frozen-HuBERT units + D24 metrics, then the agent.

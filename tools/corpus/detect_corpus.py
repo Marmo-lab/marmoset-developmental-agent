@@ -40,7 +40,7 @@ import yaml
 
 from marmoset_developmental_agent.config.agent_config import PreprocessingConfig, load_config
 from marmoset_developmental_agent.preprocessing.dataset_builder import RecordingFile, load_recordings_from_manifest
-from marmoset_developmental_agent.preprocessing.segmentation import plan_chunks
+from marmoset_developmental_agent.preprocessing.segmentation import plan_chunks, recording_entirely_at_night
 from marmoset_developmental_agent.preprocessing.streaming import CallRecord, FileSource, detect_recording, read_chunks
 
 CALL_FIELDS = ["start_s", "end_s", "duration_s", "start_time", "snr_db", "tonal_fraction",
@@ -79,6 +79,7 @@ def process(rec: RecordingFile, out: Path, cfg: PreprocessingConfig, export_audi
     t0 = time.time()
     src = FileSource(rec.path)
     duration_s = src.frames / src.sample_rate
+    night = cfg.exclude_night and recording_entirely_at_night(rec.start_time, duration_s, cfg)
     records = detect_recording(src, rec.start_time, cfg)
     plans = plan_chunks([r.segment() for r in records], cfg, duration_s)
     _atomic_write(out / "calls" / f"{rec.recording_id}.csv", _calls_csv(records))
@@ -87,7 +88,7 @@ def process(rec: RecordingFile, out: Path, cfg: PreprocessingConfig, export_audi
     summary = {
         "recording_id": rec.recording_id, "path": rec.path, "start_time": rec.start_time.isoformat(),
         "duration_s": duration_s, "n_calls": len(records), "n_chunks": len(plans),
-        "call_s": sum(r.duration_s for r in records), "elapsed_s": time.time() - t0,
+        "call_s": sum(r.duration_s for r in records), "night_skipped": night, "elapsed_s": time.time() - t0,
     }
     _atomic_write(out / "files" / f"{rec.recording_id}.json", json.dumps(summary))
     return summary
