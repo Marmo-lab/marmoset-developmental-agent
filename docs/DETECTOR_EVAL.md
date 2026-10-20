@@ -119,3 +119,24 @@ labelled them by ear: 208 labels (163 `c`, 45 `?`); 5 clips have no calls. Impor
 - Choose between the two calibrated candidates (48k-16k, floor 0.23, tonal ≥ 0.5): **@12** if its chunk P ≥ 0.85 with `?`
   counted as calls (C13: recall first under that constraint), otherwise **@15**.
 - Everything else (Talia as run, the no-rejection configurations) is reported for context only.
+
+**Result (scored once, 2026-10-20).** `?` is counted as a call unless noted.
+
+| configuration (48k-16k unless noted) | P | R | F1 | chunk P | chunk R |
+|---|---|---|---|---|---|
+| Talia as run (22 kHz, amp 0.02) | 0.91 | 0.30 | 0.45 | 0.93 | 0.61 |
+| @12, floor 0.23, no rejection | 0.59 | 0.83 | 0.69 | 0.82 | 0.92 |
+| **@12, floor 0.23, tonal ≥ 0.5 (chosen)** | 0.80 | 0.79 | 0.80 | **0.94** | 0.92 |
+| @15, floor 0.23, tonal ≥ 0.5 | 0.78 | 0.75 | 0.76 | 0.92 | 0.92 |
+| same chosen config, `c` only | 0.78 | 0.87 | 0.82 | 0.94 | 0.94 |
+
+- **Decision, by the pre-registered rule:** @12, chunk P 0.94 ≥ 0.85. It also beats @15 on every metric. The tonality
+  rejection holds out of sample: F1 +11, chunk P +12. Talia's recall reproduces at 0.30.
+- **Recall is lower than on the calibration set (0.79 vs 0.91)** because of the `?` labels, which are short and faint
+  (21 of the 45 are in ho_15). Counting `c` only, recall is 0.87.
+- **The remaining weakness is short calls.** Recall by duration: < 0.3 s 16/39, 0.3–0.5 s 60/72, 0.5–1 s 60/66, > 1 s
+  28/31.
+- **Floor 0.1 (not a candidate; reported, not chosen).** At floor 0.1 / tonal 0.6, held-out chunk P is 0.94 and chunk R
+  1.00. Pooled over all 39 day clips, P 0.80 / R 0.88 / chunk P 0.88 / chunk R 0.99, against P 0.85 / R 0.85 / chunk
+  P 0.89 / chunk R 0.94 for the chosen config. It is the next candidate, but no untouched test set is left to confirm
+  it, so it needs fresh labels (OPEN_DECISIONS D26).

@@ -9,7 +9,7 @@ Background for every question: `docs/audit/GMSLM_CODE_AUDIT.md` and `SESSION_STA
 
 ---
 
-## Still open (5)
+## Still open (6)
 
 ### Labelling and evaluation
 
@@ -55,6 +55,16 @@ perplexity), the share of units spent on background, and normalised surprisal.
 Your answer:
 
 ---
+
+**D25. uLM loss weight**
+The 1kD agent paper weights next-unit prediction 10 against masked prediction 1 (methods, "trained jointly"). The
+public config elides the uLM weight (`ulm_nll: ...`), and we use 1 × the sigmoid gate. **Default:** keep 1 and add
+10 as a sweep arm when the agent runs (docs/UPSTREAM_1KD.md).
+
+**D26. Call floor 0.1 s for the production detector**
+On held-out data, floor 0.1 / tonal 0.6 recovers short calls (chunk R 1.00 vs 0.94) at similar chunk P, but it was not
+pre-registered (DETECTOR_EVAL, held-out). **Default:** ship floor 0.23 now; re-test 0.1 on ~10 fresh clips before the
+full-corpus run if you want the short calls.
 
 ## Decided
 

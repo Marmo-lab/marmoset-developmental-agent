@@ -5,7 +5,7 @@ lands. Read this first on reconnect: it should be enough to resume without re-de
 anything. Long-lived decisions live in `OPEN_DECISIONS.md`; this file is "where are we
 right now".
 
-**Last updated:** 2026-10-19
+**Last updated:** 2026-10-20
 
 ---
 
@@ -120,21 +120,23 @@ Already landed and verified on real cluster data:
 S4.1 says it does not). It is still correctly rejected, on rate (250 kHz) and channel
 count (1), not on the missing timestamp.
 
-### Next (as of 2026-10-18; supersedes the list below where they conflict)
+### Next (as of 2026-10-20; supersedes the list below where they conflict)
 
-A. Spectral detector: tonality rejection implemented (`min_tonal_fraction`, provisional default
-   0.5; DETECTOR_EVAL finding 9). Candidates: @12/tonal 0.5 (R 0.91, chunk P 0.86) vs @15/tonal 0.5
-   (R 0.86, chunk P 0.92), both 48k-16k, floor 0.23. Pick on the held-out set. Port gate re-run after
-   the change: 23/23 IoU 1.00.
-B'. Held-out set ready: 15 day clips `ho_01..ho_15` (new recordings, mostly new dates, seed
-   20261020) in `labeling/heldout/` (cluster: `$WORK_DIR/labeling_heldout`). User labels on
-   2026-10-20 under LABELING.md. Score it ONCE with the two candidates; do not tune on it. Ear check done: only 2/16 surviving unlabelled detections
-   are calls; door beeps survive the filter (finding 10, deferred). The user labels the held-out set on 2026-10-20. B. Label a fresh held-out set (~15 day clips) to
-   confirm. C. Wire `io/raw_reader` + channel strategy into `dataset_builder`. D. Full-corpus
-   detection array job -> chunks/day, night chunks, duration distribution vs labels.
-E. wandb is ready on the cluster (user logged in, entity
-   `zvimarmor-the-hebrew-university-of-jerusalem`, compute nodes reach the host). Build the
-   optional `LoggingConfig` + logger (E21) before the first GPU training run.
+Done 2026-10-20: held-out set labelled (15 clips, 208 labels, `data/labels/heldout_labels.csv`) and scored once.
+The pre-registered choice is **spectral @12 dB, 48 kHz with a 16 kHz ceiling, floor 0.23, tonal >= 0.5**. Held-out:
+P 0.80 / R 0.79 (c only R 0.87), chunk P 0.94 / chunk R 0.92; Talia as run R 0.30 (DETECTOR_EVAL, held-out). Port
+gate 23/23 after the tonality change. Repo root tidied (docs in docs/, local material in references/ and labeling/).
+The 1kD extraction pipeline is summarised in docs/UPSTREAM_1KD.md: the agent trains on TTS re-synthesis, not on
+recordings.
+
+A. Make the chosen detector the production default for colony runs: `frame_features: spectral`, 48 kHz / 16 kHz, 12 dB,
+   tonal 0.5. Talia's config stays available for the GmSLM comparison arm.
+B. Wire `io/raw_reader` + channel strategy into `dataset_builder` (streaming, not an eager mean mixdown).
+C. Full-corpus detection array job -> chunks/day, night chunks, duration distribution vs labels, door-beep count
+   (finding 10). Then the final night decision.
+D. Optional: D26 (floor 0.1) needs ~10 fresh clips.
+E. wandb: build `LoggingConfig` + logger (E21) before the first GPU training run.
+F. Frozen-HuBERT units + D24 metrics, then the agent.
 
 ### Next (older)
 
