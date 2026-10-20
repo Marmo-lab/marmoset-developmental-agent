@@ -29,9 +29,11 @@ live locally:
     Night clips have no labelled calls, so for them only the false-alarm rate is reported.
 
 Usage:
-    python tools/analysis/score_detectors.py extract labeling/clips.csv --out ~/marmoset_work/clip_audio
+    python tools/analysis/score_detectors.py extract labeling/clips.csv --out ~/marmoset_work/clip_audio48
     python tools/analysis/score_detectors.py score labeling/clips.csv data/labels/handlabels.csv \
-        --audio labeling/clip_audio --json-out outputs/detector_scores.json [--sweep rate]
+        --audio labeling/clip_audio48 --json-out outputs/detector_scores.json [--sweep rate|tonal]
+    python tools/analysis/score_detectors.py score labeling/heldout/clips.csv data/labels/heldout_labels.csv \
+        --audio labeling/heldout/audio48 --json-out outputs/heldout_scores_tonal.json --sweep tonal --strategies mean
 """
 
 from __future__ import annotations
