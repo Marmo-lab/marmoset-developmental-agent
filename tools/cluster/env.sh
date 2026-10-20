@@ -22,7 +22,7 @@ export VENV_DIR="${VENV_DIR:-$HOME/venvs/marmoset311}"
 # the repo. Setting PYTHONPATH makes both cases behave the same.
 export PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
-# Data roots (gmslm_audit/GMSLM_CODE_AUDIT.md S4). Read-only; never write here.
+# Data roots (docs/audit/GMSLM_CODE_AUDIT.md S4). Read-only; never write here.
 export RAW_RECORDINGS=/ems/elsc-labs/omer-d/Omer-Lab-Shared/data/experiments/AnimalRoomRecordings
 export TALIA_FIRSTTRIAL=/ems/elsc-labs/omer-d/talia.sternberg/MonkeyPhones/segmentations_results/firstTrial
 export PHEEDB_ROOT=/ems/elsc-labs/omer-d/talia.sternberg/phee_exp

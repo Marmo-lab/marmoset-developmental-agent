@@ -10,14 +10,10 @@ env/
 # Run outputs (large, regenerable)
 outputs/
 
-# Read-only upstream code: nested git clones, vendored for reference only.
-# CLAUDE.md guardrail 4 forbids importing from these.
+# Read-only upstream material, local only: nested git clones (hasson_dev, dinosr), the
+# mirror of Talia's code and the cluster file index from the GmSLM audit, and a sample of
+# her outputs. Never imported from (see CLAUDE.md non-goals).
 references/
-
-# Audit artifacts: keep the report and the sample list (small, authoritative);
-# exclude the 343 MB file index and the 19 MB mirror of Talia's code.
-gmslm_audit/index/
-gmslm_audit/code_mirror/
 
 # Raw and sampled audio never belongs in git
 *.WAV
@@ -28,13 +24,12 @@ gmslm_audit/code_mirror/
 *.pth
 *.km
 *.units
-gmslm_sample/
 
 # OS / editor
 .DS_Store
 .idea/
 .vscode/
 
-# hand-labelling package (clips are large, regenerable; labels are imported to data/labels/)
+# hand-labelling packages (clips are large, regenerable; labels are imported to data/labels/).
+# labeling/ = calibration set, labeling/heldout/ = held-out test set.
 labeling/
-labeling_heldout/

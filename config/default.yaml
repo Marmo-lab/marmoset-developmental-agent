@@ -4,7 +4,7 @@
 #
 # Provenance tags: [GmSLM] = Sternberg et al. 2025 (paper + appendix; code not public)
 #                  [1kd]   = references/hasson_dev (hassonlab/1kd_learning_model)
-#                  [talia] = recovered from her working tree, see gmslm_audit/GMSLM_CODE_AUDIT.md
+#                  [talia] = recovered from her working tree, see docs/audit/GMSLM_CODE_AUDIT.md
 
 seed: 0
 device: auto
@@ -17,7 +17,7 @@ data:
   export_dir: null                 # where to write chunk WAVs + manifest.tsv + day_sizes.json
   eval_holdout_days: 7
 
-preprocessing:                     # [GmSLM] A.1-A.2, reconciled with [talia] via gmslm_audit/
+preprocessing:                     # [GmSLM] A.1-A.2, reconciled with [talia] via docs/audit/
   target_sample_rate: 16000        # [GmSLM]
   detection_sample_rate: 22050     # [talia] librosa's default resample, not the native 48 kHz
   highpass_cutoff_hz: 5000.0       # [GmSLM] + [talia]

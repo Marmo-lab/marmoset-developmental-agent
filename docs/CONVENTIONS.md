@@ -18,15 +18,20 @@ marmoset_developmental_agent/
   utils/                        synthetic_data (mock colony + PHEEDB), mock_pipeline, log
 tools/
   build_manifest.py, sweep_units.py
-  analysis/                     level_audit, aggregate_levels, verify_talia_port (the port gate), channel_eval
+  analysis/                     level_audit, aggregate_levels, verify_talia_port (the port gate), channel_eval,
+                                score_detectors, listen_detections, call_inventory
   labels/                       make_clips, make_guide, import_audacity, review_labels (hand-label workflow, see LABELING.md)
   cluster/                      env.sh, setup_env.sh, *.sbatch (ELSC SLURM jobs)
-references/                     read-only upstream code, git-ignored (never import from it)
+docs/                           ROADMAP, OPEN_DECISIONS, SESSION_STATE, DETECTOR_EVAL, LABELING, CODEMAP; audit/ = GmSLM code audit
+data/labels/                    hand labels (calibration: handlabels.csv, held-out: heldout_labels.csv)
+references/                     git-ignored, read-only: upstream clones, Talia's code mirror, audit file index, her output sample
+labeling/                       git-ignored: calibration clips + audio; heldout/ = held-out clips
+outputs/                        git-ignored: run outputs and detector scores
 ```
 Other outputs: `outputs/<run>/results.json`, `config_resolved.yaml`, `checkpoints/day_XXXX.pt` (weekly, plus the last day), `generated_continuation.wav`.
 
 ## Paper vs. code: who wins
-The GmSLM code is not public, but Talia's working tree was audited (`gmslm_audit/GMSLM_CODE_AUDIT.md`). Constants are tagged `[paper]` / `[talia]` / `[ours]` in `PreprocessingConfig`.
+The GmSLM code is not public, but Talia's working tree was audited (`docs/audit/GMSLM_CODE_AUDIT.md`). Constants are tagged `[paper]` / `[talia]` / `[ours]` in `PreprocessingConfig`.
 - **Rounding-level gap: the code wins.** Example: her 10-frame call floor is 0.2322 s, which the paper rounds to 0.25 s.
 - **Large gap: the paper wins.**
 - **Paper physically implausible, code field-standard: the code wins (paper typo).** Examples: mask_prob 0.80, not 8%; LR 3.5e-4, not 3.5e-3. The paper also prints an impossible "5e-45".

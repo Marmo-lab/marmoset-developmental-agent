@@ -2,7 +2,7 @@
 
 Unsupervised developmental model of marmoset vocal learning (Omer lab, ELSC × Hasson lab, Princeton). Front-end and units follow **GmSLM** (Sternberg et al., EMNLP Findings 2025). Day-by-day training follows the **Hasson "First 1000 Days"** framework.
 
-Details: `docs/CONVENTIONS.md` (gotchas, layout, cluster), `ROADMAP.md` (science), `OPEN_DECISIONS.md`, `SESSION_STATE.md` (resume point), `REVIEW.md` (review standard).
+Details in `docs/`: `CONVENTIONS.md` (gotchas, layout, cluster), `ROADMAP.md` (science), `OPEN_DECISIONS.md`, `SESSION_STATE.md` (resume point), `DETECTOR_EVAL.md`, `LABELING.md`. Review standard: `REVIEW.md`.
 
 ## Stack
 Python 3.11 · PyTorch · transformers (HuBERT) · scikit-learn (k-means) · scipy / librosa / soundfile · pytest · ruff. Real runs happen on the ELSC SLURM cluster; everything also runs on CPU in mock mode. No fairseq, no torchaudio.

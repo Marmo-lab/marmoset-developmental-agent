@@ -5,7 +5,7 @@ One line is enough. Writing **`default`** accepts my recommendation. Skip anythi
 want to leave for later; nothing below blocks current work unless marked **[blocks]**.
 Answered questions move to the *Decided* log at the bottom.
 
-Background for every question: `gmslm_audit/GMSLM_CODE_AUDIT.md` and `SESSION_STATE.md`.
+Background for every question: `docs/audit/GMSLM_CODE_AUDIT.md` and `SESSION_STATE.md`.
 
 ---
 

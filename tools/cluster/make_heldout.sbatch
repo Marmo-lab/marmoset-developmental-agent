@@ -12,5 +12,5 @@ source "$PROJECT_DIR/tools/cluster/env.sh"
 OUT="$WORK_DIR/labeling_heldout"; mkdir -p "$OUT/labels"
 python "$PROJECT_DIR/tools/labels/make_clips.py" "$WORK_DIR/manifests/recordings.csv" -o "$OUT" \
     --day 15 --night 0 --seed 20261020 --exclude "$WORK_DIR/labeling/clips.csv" --prefix ho
-cp "$PROJECT_DIR/LABELING.md" "$WORK_DIR/labeling/guide.png" "$OUT/"
+cp "$PROJECT_DIR/docs/LABELING.md" "$WORK_DIR/labeling/guide.png" "$OUT/"
 du -sh "$OUT"

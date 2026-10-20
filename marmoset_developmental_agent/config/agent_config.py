@@ -39,7 +39,7 @@ class PreprocessingConfig:
     Provenance of every constant is tagged in its comment:
 
     ``[paper]``   stated in GmSLM (Sternberg et al., 2025).
-    ``[talia]``   read off her working code (``gmslm_audit/GMSLM_CODE_AUDIT.md`` S3.1);
+    ``[talia]``   read off her working code (``docs/audit/GMSLM_CODE_AUDIT.md`` S3.1);
                   preferred over the paper wherever the two differ only by rounding.
     ``[ours]``    our decision, because neither source makes one (audit tier D).
 

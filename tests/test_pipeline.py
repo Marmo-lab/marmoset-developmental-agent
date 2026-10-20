@@ -298,7 +298,7 @@ def test_pipeline_smoke(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# Audit reconciliation (gmslm_audit/GMSLM_CODE_AUDIT.md)
+# Audit reconciliation (docs/audit/GMSLM_CODE_AUDIT.md)
 # --------------------------------------------------------------------------- #
 def test_talia_durations_round_trip_to_her_frame_counts():
     """Our seconds-valued constants must map back to the exact frame counts she used.

@@ -1,7 +1,7 @@
 # CODEMAP: Marmoset Developmental Agent (`marmoset_developmental_agent/`)
 
 Our integrated codebase: GmSLM's marmoset front-end, units and evaluations, trained under the Hasson lab's developmental regime (chronological days, sleep replay, gated decoder, weekly trajectories).
-Companion maps: [`references/hasson_dev/CODEMAP.md`](references/hasson_dev/CODEMAP.md) · [`references/gmslm/CODEMAP.md`](references/gmslm/CODEMAP.md) · science plan in [`ROADMAP.md`](ROADMAP.md) · commands in [`CLAUDE.md`](CLAUDE.md).
+Companion maps: [`references/hasson_dev/CODEMAP.md`](../references/hasson_dev/CODEMAP.md) · [`references/gmslm/CODEMAP.md`](../references/gmslm/CODEMAP.md) · science plan in [`ROADMAP.md`](ROADMAP.md) · commands in [`CLAUDE.md`](../CLAUDE.md).
 
 State documented: 2026-09-29. 30 Python files, about 3,700 lines. `python run_pipeline.py --mock` passes (about 70 s CPU) and `pytest tests/` passes (21 tests).
 
@@ -14,7 +14,7 @@ Omer_Lab_Project/
 ├── run_pipeline.py                 CLI: runs stages 1–7 end to end (--mock or --config)
 ├── config/default.yaml             paper-scale overrides of the dataclass defaults
 ├── tests/test_pipeline.py          21 pytest checks
-├── pytest.ini, requirements.txt, .gitignore, CLAUDE.md, ROADMAP.md
+├── pyproject.toml, requirements.txt, .gitignore, CLAUDE.md, REVIEW.md, README.md
 ├── references/                     read-only upstream code (never imported)
 └── marmoset_developmental_agent/
     ├── config/agent_config.py      ALL hyperparameters (dataclasses) + YAML load/save

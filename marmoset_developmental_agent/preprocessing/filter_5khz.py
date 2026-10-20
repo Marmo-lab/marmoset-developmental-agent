@@ -15,7 +15,7 @@ Two interchangeable implementations of step 3 live here, selected by
 
 ``"talia"`` (default)
     Faithful port of ``segment_processor.py`` from Talia Sternberg's working tree, as
-    recovered in ``gmslm_audit/GMSLM_CODE_AUDIT.md`` S3.1. Per frame it keeps STFT bins
+    recovered in ``docs/audit/GMSLM_CODE_AUDIT.md`` S3.1. Per frame it keeps STFT bins
     with magnitude above ``amp_threshold``, then derives two features:
 
         freq_range[t] = f_max[t] - f_min[t]    over surviving bins (0 if none)
@@ -160,7 +160,7 @@ def _talia_frame_activity(
 ) -> FrameActivity:
     """Line-by-line port of ``segment_processor.py`` (calculate_spectrogram,
     extract_features, cluster_frame_features), read from source in
-    ``gmslm_audit/code_mirror/MonkeyPhones/code/didisDATA/refactored_code``.
+    ``references/talia_code_mirror/MonkeyPhones/code/didisDATA/refactored_code``.
 
     It reproduces her behaviour including its quirks, because the point of this path
     is to be checked against her ``call_indicies.pkl``:
