@@ -136,8 +136,13 @@ B. DONE (0b0d794): `preprocessing/streaming.py`: 60 s blocks + 5 s context, `Cal
    (ambisonic_beam; detection on mean). `dataset_builder` streams `RecordingFile`s.
 C. IN PROGRESS: `tools/corpus/detect_corpus.py` + `tools/cluster/detect_corpus.sbatch` (resumable array job, catalogue
    only; chunk audio export is opt-in and needs ~100+ GB on the shared FS: ask first). Pilot = the 45 recordings
-   behind the labelled clips (`RUN=pilot`, job 63091739), then `summarize_corpus.py` with `--labels` checks the
-   production path reproduces the evaluated P/R. Then full corpus `RUN=v1 --array=0-135%16 --n-tasks 136`.
+   behind the labelled clips (`RUN=pilot`, jobs 63091739 + 63095025): 45-85 s per hour-long file on one core.
+   **The production path reproduces the evaluation** (labelled minutes, `?` counted as calls): held-out P 0.81 /
+   R 0.77 / chunk P 0.96 / chunk R 0.93 (evaluated on clips: 0.80 / 0.79 / 0.94 / 0.92); calibration P 0.87 /
+   R 0.88. Pilot also shows: calls per audio-hour ~0 from 19:00 to 05:00 and 350-1660 by day; detected durations
+   match the labels except < 0.3 s (2.9% vs 12.3%, the known short-call gap, D26); median SNR 24 dB; no fixed-tone
+   spike (no frequency bin above 8 flat calls in 45 h, so the door beep is rare). ~200 chunks per hour of day audio.
+   Full corpus submitted: `RUN=v1`, job 63100169 (136 tasks, 16 at once, ~3-4 h). Then summarize_corpus on v1.
 D. Optional: D26 (floor 0.1) needs ~10 fresh clips.
 E. wandb: build `LoggingConfig` + logger (E21) before the first GPU training run.
 F. Frozen-HuBERT units + D24 metrics, then the agent.
