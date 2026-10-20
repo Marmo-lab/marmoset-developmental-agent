@@ -18,7 +18,7 @@ Omer_Lab_Project/
 ├── references/                     read-only upstream code (never imported)
 └── marmoset_developmental_agent/
     ├── config/agent_config.py      ALL hyperparameters (dataclasses) + YAML load/save
-    ├── preprocessing/              PHASE 1   filter_5khz → segmentation → dataset_builder
+    ├── preprocessing/              PHASE 1   filter_5khz → segmentation → streaming → dataset_builder
     ├── encoders/                   PHASE 2   base_encoder, marmoset_hubert, dino_sr
     ├── decoders/                   (uLM)     transformer_ulm
     ├── agent/                      PHASE 3   lr_scheduler, replay_buffer, trainer, factory
@@ -45,14 +45,17 @@ Omer_Lab_Project/
 
 ```text
  WAV recording(s), any rate (mock: 48 kHz synthetic colony, file order shuffled on purpose)
-   │  Recording(audio (L_native,), sample_rate, start_time, recording_id, annotations?)
+   │  Recording(audio in memory) or RecordingFile(path), + start_time, recording_id, annotations?
    ▼ dataset_builder.build_chronological_dataset
    │   sort by start_time  ─────────────────────────────────────────── chronology is never broken after this
-   │   filter_5khz.preprocess_waveform:  Butterworth HPF 5 kHz (order 8, zero-phase) at native rate
-   │        compute_frame_activity: STFT 2048/512 → per-bin noise floor → density & variance → active[t]
-   │   segmentation.activity_to_calls:  merge gaps < 0.12 s, keep 0.25–4 s  → [CallSegment]
-   │   filter_5khz.resample_audio → 16 kHz
-   │   segmentation.chunk_recording:  10 s windows packed with calls → Chunk(waveform (160000,), calls, start_time)
+   │   streaming.detect_recording, per 60 s block (+5 s context each side):
+   │        capsules → detection_channel_strategy (mean) → 48 kHz → HPF 5 kHz (order 5, zero-phase)
+   │        compute_frame_activity: STFT 2048/512 → per-bin floor → density, variance, tonality → active[t]
+   │        segmentation.activity_to_calls: bridge gaps ≤ 4 frames, span in (0.23, 4) s, tonal ≥ 0.5 → calls
+   │        → CallRecord(start/end, wall-clock time, SNR, tonal fraction, dominant frequency)
+   │   segmentation.plan_chunks:  10 s windows packed with calls → ChunkPlan(offset_s, calls)
+   │   streaming.read_chunks:  each window → training_channel_strategy (ambisonic_beam) → 16 kHz
+   │        → Chunk(waveform (160000,), calls, start_time)
    │   DailyExposureSchedule F(d): n(d) = ⌊hours(d)·3600 / 10⌋ chunks  → ChronologicalDataset(chunks, day_sizes)
    ▼
  ENCODERS  wav (B, 160000) float32 @16 kHz
@@ -239,6 +242,15 @@ Omer_Lab_Project/
   - `label_calls_from_annotations(detected, annotations, min_overlap=0.5)`: copies ground-truth labels by maximum overlap (mock data / labelled sets).
   - `detection_scores(detected, annotations, min_overlap=0.5) -> {precision, recall, n_detected, n_annotated}`.
 
+#### `preprocessing/streaming.py`
+- **Primary Purpose**: The production front-end over a whole recording: blocked detection, the call catalogue, and chunk audio read back from the source.
+- **Upstream & Downstream**: `filter_5khz`, `segmentation`, `io/channels`, `soundfile`. Used by `dataset_builder.preprocess_recording` and `tools/corpus/detect_corpus.py`.
+- **Core Classes & Functions**:
+  - `AudioSource` protocol (`sample_rate`, `frames`, `channels`, `read(start, n) -> (n, ch)`); `ArraySource` (in memory), `FileSource` (seeks a WAV).
+  - `CallRecord(start_s, end_s, start_time, snr_db, tonal_fraction, peak_freq_hz, peak_freq_iqr_hz)`: one catalogue row.
+  - `detect_recording(src, start_time, cfg) -> [CallRecord]`: blocks of `stream_block_s` with `stream_context_s` each side; a call belongs to the block whose core holds its onset; overlaps merged; night rule applied.
+  - `read_chunks(src, plans, cfg, recording_id, start_time) -> [Chunk]`: reads each planned window, combines capsules with `training_channel_strategy`, resamples to 16 kHz on the target-rate grid.
+
 #### `preprocessing/dataset_builder.py`
 - **Primary Purpose**: Sorts recordings in time, runs the front-end, and cuts the chunk stream into simulated days with F(d). It also handles disk manifests for real-scale data.
 - **Architectural Role**: Dataset construction (the developmental timeline).
@@ -250,9 +262,10 @@ Omer_Lab_Project/
     - `samples_for_day(d) = ⌊hours(d)·3600 / seconds_per_sample⌋` (raises if 0).
     - `day_sizes(total)`: consumes the stream day by day; the last day may be partial.
   - `ChronologicalDataset(chunks, day_sizes)`: `num_days`, `day_indices(d) -> np.ndarray` (global indices), `day(d)`, `days(start, stop)`, `day_of(index)`, `waveforms(indices) -> (B, 160000)`, `summary()`.
-  - `preprocess_recording(rec, cfg) -> (chunks, detection_stats)`: HPF + activity at the native rate → calls (+ labels if annotated) → resample → chunk.
+  - `RecordingFile(path, start_time, recording_id, day=None, annotations=[])`: a raw file, streamed; `audio_source(rec)` gives either kind an `AudioSource`.
+  - `preprocess_recording(rec, cfg) -> (chunks, detection_stats)`: `streaming.detect_recording` → calls (+ labels if annotated) → `plan_chunks` → `streaming.read_chunks`.
   - `build_chronological_dataset(recordings, pre_cfg, exp_cfg) -> (dataset, info)`: sorts by `start_time`, preprocesses, re-sorts chunks by time, and assigns days (`exposure` via `DailyExposureSchedule`, or `calendar` via runs of `recording_day` / date). `info` carries the pooled detection precision and recall when annotations exist.
-  - `load_recordings_from_manifest(csv)`: CSV `path,start_time[,recording_id]`, eager load, mono.
+  - `load_recordings_from_manifest(csv)`: CSV `path,start_time[,recording_id]` → `RecordingFile`s; nothing is read until preprocessing.
   - `export_manifest(dataset, out_dir) -> Path`: `chunks/%08d.wav` + `manifest.tsv` (`path, n_samples, day, recording_id, start_time, calls "a-b;c-d"`) + `day_sizes.json`.
   - `load_manifest(tsv, sr)`: lazy `Chunk(waveform=None, path=…)` dataset.
 

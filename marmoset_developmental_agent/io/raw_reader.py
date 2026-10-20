@@ -1,10 +1,9 @@
 """Streaming reader for the raw colony recordings, with format validation.
 
 Why streaming. One raw file is 48 kHz, 4-channel, 24-bit PCM, ~62 minutes -- 2.0 GB on
-disk and **2.9 GB as float32 in RAM**, and there are ~2,750 of them. The existing
-``load_recordings_from_manifest`` reads whole files eagerly into a list, which works on
-60 s of synthetic audio and cannot work here (the full corpus would be ~2 TB resident).
-Everything in this module reads in bounded blocks instead.
+disk and **2.9 GB as float32 in RAM**, and there are ~2,750 of them, so nothing reads a
+whole file. The production front-end streams through ``preprocessing/streaming.py``;
+:func:`iter_blocks` here is a simpler block reader for ad-hoc use, not on the pipeline path.
 
 Why validation. ``AnimalRoomRecordings/`` contains one folder,
 ``Rec_2021_06_28_ultrasonic_recordings_colony``, recorded on a different instrument:

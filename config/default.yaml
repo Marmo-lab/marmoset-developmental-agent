@@ -19,13 +19,13 @@ data:
 
 preprocessing:                     # [GmSLM] A.1-A.2, reconciled with [talia] via docs/audit/
   target_sample_rate: 16000        # [GmSLM]
-  detection_sample_rate: 22050     # [talia] librosa's default resample, not the native 48 kHz
+  detection_sample_rate: 48000     # [ours] native rate; [talia] ran at 22050 (config/gmslm_arm.yaml)
   highpass_cutoff_hz: 5000.0       # [GmSLM] + [talia]
   highpass_order: 5                # [talia] butter(5) + filtfilt; was 8 before the audit
   n_fft: 2048                      # [GmSLM]; [talia] librosa default, never set explicitly
   hop_length: 512                  # [GmSLM]; [talia] librosa default
   highpass_training_audio: false   # [talia] she filtered for detection only, wrote unfiltered slices
-  frame_features: talia            # talia (validate against her call_indicies.pkl) | spectral (ours)
+  frame_features: spectral         # spectral (ours, chosen on the held-out test) | talia (GmSLM arm)
   # "talia" feature path -- segment_processor.py constants
   amp_threshold: 0.02
   min_bandwidth_hz: 3000.0         # loop bounds: bands counted are (j-1000, j), i.e. 2-10 kHz
@@ -41,20 +41,25 @@ preprocessing:                     # [GmSLM] A.1-A.2, reconciled with [talia] vi
   abrupt_up_freq_range_hz: 2000.0  # reject SHORT candidates (span < 20 frames) ...
   abrupt_up_max_span_s: 0.4644     # ... whose freq_range ever exceeds 2 kHz
   boundary_pad_s: 0.02268          # +-500 samples at 22050 Hz
-  # "spectral" feature path (ours) -- calibrate against hand labels, not yet tuned
+  # "spectral" feature path (ours) -- chosen on the held-out set, docs/DETECTOR_EVAL.md
   bin_energy_threshold_db: 12.0
   min_active_bin_fraction: 0.005
   max_active_bin_fraction: 0.35
   min_spectral_variance_db2: 20.0
-  spectral_max_freq_hz: null      # band ceiling; null = Nyquist of detection_sample_rate
+  spectral_max_freq_hz: 16000.0   # band ceiling; null = Nyquist of detection_sample_rate
   tonal_peak_db: 10.0              # tonal frame: peak > floor + this, ...
   tonal_max_bandwidth_hz: 2000.0   # ... and bins within this many dB of it span < 2 kHz
-  min_tonal_fraction: 0.5          # reject calls with fewer tonal frames; null = off (provisional)
+  min_tonal_fraction: 0.5          # reject calls with fewer tonal frames; null = off
   # shared run grouping and duration limits
   merge_gap_s: 0.0929             # 4 frames
   min_run_members: 3               # groups need > 2 member frames
   min_call_duration_s: 0.2322     # 10 frames; [GmSLM] rounds this to 0.25 s
   max_call_duration_s: 4.0        # [GmSLM] + [talia], exact agreement
+  # channels and streaming (ours)
+  detection_channel_strategy: mean            # capsules -> detection signal (second-order; held-out used mean)
+  training_channel_strategy: ambisonic_beam   # capsules -> training audio (+2.45 dB call-band range by day)
+  stream_block_s: 60.0             # detection block; each read with stream_context_s on both sides
+  stream_context_s: 5.0
   chunk_duration_s: 10.0          # [GmSLM] + [talia]
   exclude_night: false            # [ours] decide from the night clips in the hand labels
   night_start_hour: 19.0

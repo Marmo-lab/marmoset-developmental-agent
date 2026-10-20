@@ -162,7 +162,9 @@ def _detect(x: np.ndarray, sr: int, cfg: PreprocessingConfig) -> List[Interval]:
 
 
 def _configs(sweep: str) -> List[Tuple[str, PreprocessingConfig]]:
-    return [(name, dataclasses.replace(PreprocessingConfig(), **kw)) for name, kw in SWEEPS[sweep]()]
+    # Overrides are relative to Talia's configuration (22050 Hz, no band ceiling), the
+    # default when the sweeps were defined, so names such as "22k" keep their meaning.
+    return [(name, dataclasses.replace(PreprocessingConfig.talia(), **kw)) for name, kw in SWEEPS[sweep]()]
 
 
 def detect_clip(npz_path: str, sweep: str = "threshold",

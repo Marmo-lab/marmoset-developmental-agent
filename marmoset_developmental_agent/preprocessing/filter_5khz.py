@@ -13,7 +13,7 @@ The front-end, as the paper describes it:
 Two interchangeable implementations of step 3 live here, selected by
 ``PreprocessingConfig.frame_features``:
 
-``"talia"`` (default)
+``"talia"``
     Faithful port of ``segment_processor.py`` from Talia Sternberg's working tree, as
     recovered in ``docs/audit/GMSLM_CODE_AUDIT.md`` S3.1. Per frame it keeps STFT bins
     with magnitude above ``amp_threshold``, then derives two features:
@@ -37,7 +37,7 @@ Two interchangeable implementations of step 3 live here, selected by
     It inherits her uncalibrated ``amp_threshold`` and heuristics.
 
 ``"spectral"``
-    Our own detector, to be calibrated against hand labels:
+    Our own detector and the production default, calibrated against hand labels:
 
         S_db[f, t]  = 10 log10 |STFT|^2, restricted to f >= cutoff
         floor[f]    = median_t S_db[f, t]                   (stationary noise floor)
@@ -54,13 +54,14 @@ Two interchangeable implementations of step 3 live here, selected by
         width[t]  = bandwidth of the bins within tonal_peak_db of peak[t]
         tonal[t]  = peak[t] > tonal_peak_db and width[t] < tonal_max_bandwidth_hz
 
-    which ``segmentation.py`` uses to reject calls that are mostly not tonal.
+    which ``segmentation.py`` uses to reject calls that are mostly not tonal. ``peak`` and
+    its frequency are kept too, as per-call quality features (SNR, pitch) for the corpus
+    catalogue (``streaming.py``).
 
-Note that detection runs at ``detection_sample_rate`` (22050 Hz, reproducing librosa's
-default resample in her code), not at the recordings' native 48 kHz, and that the
-high-pass filter applies to detection only -- the audio handed downstream is unfiltered
-unless ``highpass_training_audio`` is set. Both choices follow her code; both are
-flagged for ablation in ROADMAP.
+Detection runs at ``detection_sample_rate``: the native 48 kHz in production, 22050 Hz
+(librosa's default resample) in ``PreprocessingConfig.talia()``. The high-pass filter
+applies to detection only -- the audio handed downstream is unfiltered unless
+``highpass_training_audio`` is set, as in her code.
 """
 
 from __future__ import annotations
@@ -94,6 +95,8 @@ class FrameActivity:
     density: Optional[np.ndarray] = None  # (T,) fraction of above-floor bins
     variance_db2: Optional[np.ndarray] = None  # (T,) spectral variance in dB^2
     tonal: Optional[np.ndarray] = None  # (T,) bool, narrow-line frame
+    peak_db: Optional[np.ndarray] = None  # (T,) loudest in-band bin above its floor, dB
+    peak_freq_hz: Optional[np.ndarray] = None  # (T,) frequency of that bin
 
 
 def highpass_filter(
@@ -241,6 +244,7 @@ def _spectral_frame_activity(
     density = (rel > cfg.bin_energy_threshold_db).mean(axis=0)
     variance = rel.var(axis=0)
     peak = rel.max(axis=0)
+    peak_freq = freqs[band][rel.argmax(axis=0)]
     width_hz = (rel > peak - cfg.tonal_peak_db).sum(axis=0) * (freqs[1] - freqs[0])
     tonal = (peak > cfg.tonal_peak_db) & (width_hz < cfg.tonal_max_bandwidth_hz)
     active = (
@@ -255,6 +259,8 @@ def _spectral_frame_activity(
         density=density,
         variance_db2=variance,
         tonal=tonal,
+        peak_db=peak,
+        peak_freq_hz=peak_freq,
     )
 
 

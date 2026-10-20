@@ -115,7 +115,7 @@ ABLATIONS: Dict[str, Dict[str, float]] = {
     "no abrupt-up rejection": {"abrupt_up_freq_range_hz": float("inf")},
     "no shape rejections": {"max_bandwidth_crossings": 10**9,
                             "abrupt_up_freq_range_hz": float("inf")},
-    "wider merge gap (x2)": {"merge_gap_s": 2 * PreprocessingConfig().merge_gap_s},
+    "wider merge gap (x2)": {"merge_gap_s": 2 * PreprocessingConfig.talia().merge_gap_s},
 }
 
 
@@ -124,7 +124,7 @@ def ablate(wav: str, theirs: List[Tuple[int, int]], sr: int, strategy: str,
     """Re-run detection under each variant in ABLATIONS and tabulate agreement."""
     print(f"\n{'variant':<26}{'ours':>6}{'matched':>9}{'recall_hers':>13}{'prec_vs_hers':>14}")
     for name, overrides in ABLATIONS.items():
-        cfg = dataclasses.replace(PreprocessingConfig(frame_features="talia"), **overrides)
+        cfg = dataclasses.replace(PreprocessingConfig.talia(), **overrides)
         r = compare(detect(wav, cfg, strategy), theirs, sr, min_iou)
         print(f"{name:<26}{r['n_ours']:>6}{r['matched']:>9}"
               f"{r['recall_of_hers']:>13.3f}{r['precision_vs_hers']:>14.3f}")
@@ -141,7 +141,7 @@ def main() -> None:
                     help="also re-run with each rejection stage disabled")
     a = ap.parse_args()
 
-    cfg = PreprocessingConfig(frame_features="talia")
+    cfg = PreprocessingConfig.talia()
     sr = sf.info(a.wav).samplerate
     theirs = load_reference(a.pkl)
     print(f"reference: {len(theirs)} calls from {a.pkl}")

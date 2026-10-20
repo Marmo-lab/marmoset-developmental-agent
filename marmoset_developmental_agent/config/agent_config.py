@@ -26,6 +26,8 @@ from typing import Any, Dict, List, Literal, Optional, Type, TypeVar, Union, get
 
 import yaml
 
+from marmoset_developmental_agent.io.channels import ChannelStrategy
+
 T = TypeVar("T")
 
 
@@ -51,10 +53,10 @@ class PreprocessingConfig:
     """
 
     target_sample_rate: int = 16_000  # [paper] rate everything downstream trains at
-    # [talia] Detection ran on librosa's default resample, NOT the native 48 kHz. This
-    # caps Nyquist at 11025 Hz -- flush against max_bandwidth_hz below, which is very
-    # likely an accident rather than a design. Kept for fidelity; see ROADMAP ablation.
-    detection_sample_rate: int = 22_050
+    # [ours] Detection at the native 48 kHz (DETECTOR_EVAL finding 5: some calls sit at
+    # 10-12 kHz). [talia] ran on librosa's default 22050 Hz resample, which caps Nyquist
+    # at 11025 Hz, flush against max_bandwidth_hz below; :meth:`talia` restores it.
+    detection_sample_rate: int = 48_000
     highpass_cutoff_hz: float = 5_000.0  # [paper] + [talia], exact agreement
     highpass_order: int = 5  # [talia] order 5, zero-phase -> effective order 10
     n_fft: int = 2048  # [paper]; [talia] librosa default, never set explicitly
@@ -65,11 +67,12 @@ class PreprocessingConfig:
     highpass_training_audio: bool = False
 
     # Which per-frame feature set drives detection.
-    #   "talia"    -- faithful port of segment_processor.py (freq_range / bandwidth).
-    #                 Use this to validate against her call_indicies.pkl.
-    #   "spectral" -- our noise-floor + density + variance detector, to be calibrated
-    #                 against hand labels once those exist.
-    frame_features: Literal["talia", "spectral"] = "talia"
+    #   "spectral" -- our noise-floor + density + variance + tonality detector, chosen on
+    #                 the pre-registered held-out test (DETECTOR_EVAL: P 0.80 / R 0.79,
+    #                 chunk P 0.94 / chunk R 0.92). The production default.
+    #   "talia"    -- faithful port of segment_processor.py (freq_range / bandwidth), for
+    #                 the GmSLM comparison arm and the port gate; use :meth:`talia`.
+    frame_features: Literal["talia", "spectral"] = "spectral"
 
     # --- "talia" feature path (segment_processor.py, read from source) ------------ #
     amp_threshold: float = 0.02  # [talia] AMP_THRESHOLD on librosa |STFT|
@@ -111,16 +114,16 @@ class PreprocessingConfig:
     # detection rate. Lets detection run at a higher rate (marmoset calls reach 12-16 kHz,
     # above the 11 kHz Nyquist of 22050 Hz) without the empty band above the calls
     # diluting the active-bin fractions.
-    spectral_max_freq_hz: Optional[float] = None  # [ours]
+    spectral_max_freq_hz: Optional[float] = 16_000.0  # [ours]
     # Tonality rejection (docs/DETECTOR_EVAL.md findings 9-10). A frame is *tonal* if its
     # loudest in-band bin is > tonal_peak_db above that bin's floor and the bins within
     # tonal_peak_db of that peak span < tonal_max_bandwidth_hz: a narrow line, not a
     # broadband smear. A call is rejected if fewer than min_tonal_fraction of the frames
     # across its unpadded span are tonal. Cage-noise transients sit in the same band as
     # calls (dominant-frequency AUC 0.38), but are broad: tonal fraction separates them
-    # with AUC 0.96. None disables the rejection. 0.5 is provisional, from the 30 labelled
-    # clips (12 dB, 48 kHz / 16 kHz: F1 0.74 -> 0.89, chunk P 0.72 -> 0.86); confirm on the
-    # held-out set.
+    # with AUC 0.96. None disables the rejection. 0.5 was set on the 30 calibration clips
+    # (12 dB, 48 kHz / 16 kHz: F1 0.74 -> 0.89, chunk P 0.72 -> 0.86) and held on the
+    # held-out set (F1 0.69 -> 0.80, chunk P 0.82 -> 0.94).
     tonal_peak_db: float = 10.0  # [ours]
     tonal_max_bandwidth_hz: float = 2_000.0  # [ours]
     min_tonal_fraction: Optional[float] = 0.5  # [ours]
@@ -138,6 +141,25 @@ class PreprocessingConfig:
     min_call_duration_s: float = 0.2322
     max_call_duration_s: float = 4.0  # [paper] + [talia]
 
+    # --- channels and streaming [ours] ------------------------------------------ #
+    # How the four capsules become the signal detection runs on, and the signal the
+    # training chunks are cut from (io/channels.py). Detection: strategy is second-order
+    # (DETECTOR_EVAL finding 6) and the held-out test was scored on "mean". Training audio:
+    # "ambisonic_beam" steers a virtual cardioid at the loudest direction per chunk, +2.45 dB
+    # call-band dynamic range over "mean" by day (SESSION_STATE finding 9), so the calls
+    # the agent hears stand further above the room. :meth:`talia` uses "mean" for both,
+    # which is what librosa's mono mixdown did in her pipeline.
+    detection_channel_strategy: ChannelStrategy = "mean"
+    training_channel_strategy: ChannelStrategy = "ambisonic_beam"
+    # Raw files are an hour long (2.9 GB as float32), so detection streams them in blocks of
+    # stream_block_s, each read with stream_context_s of extra audio on both sides. A call
+    # belongs to the block whose core holds its onset. The context exceeds the longest call
+    # (4 s), so a call is never cut at a block edge, and it also absorbs the filter's edge
+    # transient. The spectral noise floor is a median over the block (~70 s), close to the
+    # 64 s clips it was evaluated on.
+    stream_block_s: float = 60.0
+    stream_context_s: float = 5.0
+
     # --- output chunking (GmSLM A.2) -------------------------------------------- #
     chunk_duration_s: float = 10.0  # [paper] + [talia]
     chunk_pre_pad_s: float = 0.1  # [ours]
@@ -154,6 +176,17 @@ class PreprocessingConfig:
     exclude_night: bool = False
     night_start_hour: float = 19.0
     night_end_hour: float = 6.0
+
+    @classmethod
+    def talia(cls) -> "PreprocessingConfig":
+        """Talia's front-end as she ran it: the GmSLM comparison arm and the port gate.
+
+        Her detector at librosa's 22050 Hz resample, on the 4-capsule mean, with the
+        unfiltered mean as training audio. Only these fields differ from the production
+        defaults; the "spectral" fields are unused on this path.
+        """
+        return cls(frame_features="talia", detection_sample_rate=22_050, spectral_max_freq_hz=None,
+                   detection_channel_strategy="mean", training_channel_strategy="mean")
 
     def hop_s(self) -> float:
         """Seconds per STFT frame at the detection rate."""
@@ -419,11 +452,9 @@ class AgentConfig:
         cfg.output_dir = "outputs/mock"
         cfg.device = "cpu"
         cfg.training.num_days = 3
-        # The "talia" detector keys off an absolute |STFT| threshold (amp_threshold),
-        # implicitly calibrated to the colony recordings' gain, so it under-detects on
-        # synthetic audio (recall ~0.4 vs ~0.98 on the mock colony). Mock runs use our
-        # level-relative detector; both paths are covered by tests/test_pipeline.py.
-        cfg.preprocessing.frame_features = "spectral"
+        # Mock runs use the production ("spectral") detector. The "talia" detector keys off
+        # an absolute |STFT| threshold calibrated to the colony recordings' gain, so it
+        # under-detects on synthetic audio; both paths are covered by tests/test_pipeline.py.
         # ~3-5 ten-second chunks per simulated day; one day per "period".
         cfg.exposure.hours_per_day_by_period = [0.0084, 0.0112, 0.014]
         cfg.exposure.days_per_period = 1

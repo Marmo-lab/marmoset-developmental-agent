@@ -1,0 +1,10 @@
+# GmSLM comparison arm: Talia's front-end as she ran it (PreprocessingConfig.talia()).
+# Overlay on the defaults:  python run_pipeline.py --config config/gmslm_arm.yaml
+# Only the fields that differ from the production defaults are listed.
+
+preprocessing:
+  frame_features: talia            # faithful port of segment_processor.py (port gate: 23/23, IoU 1.00)
+  detection_sample_rate: 22050     # librosa's default resample
+  spectral_max_freq_hz: null       # unused on the talia path
+  detection_channel_strategy: mean # librosa's mono mixdown
+  training_channel_strategy: mean

@@ -1,8 +1,11 @@
 """Chronological, day-by-day dataset construction (Hasson developmental framework).
 
 Recordings are sorted by wall-clock start time. They are never shuffled, since the
-agent must experience its "life" in order. Each recording goes through the GmSLM
-front-end (``filter_5khz`` + ``segmentation``) and becomes a list of 10 s chunks.
+agent must experience its "life" in order. Each recording goes through the front-end
+(``streaming``: blocked detection with ``filter_5khz`` + ``segmentation``, then chunk audio
+read back with the training channel strategy) and becomes a list of 10 s chunks. A
+recording is either in memory (:class:`Recording`: synthetic data, tests) or a raw file
+(:class:`RecordingFile`), and both take the same path.
 Chunks are then assigned to simulated days in one of two ways:
 
 * ``exposure`` (default; mirrors ``data_preparation/scripts/generate_cycle_sizes.py``):
@@ -11,8 +14,9 @@ Chunks are then assigned to simulated days in one of two ways:
   daily-hours schedule. This models exposure growing through infancy.
 * ``calendar``: one simulated day per recording day.
 
-At real scale the chunks do not fit in memory, so ``export_manifest`` writes them as
-WAV files plus a TSV and a ``day_sizes.json`` (the analogue of Hasson's
+Chunks built here are held in memory, which suits a few recordings. The full corpus is
+processed per file by ``tools/corpus/detect_corpus.py`` instead. ``export_manifest`` writes
+chunks as WAV files plus a TSV and a ``day_sizes.json`` (the analogue of Hasson's
 ``cycle_sizes/train.json``).
 """
 
@@ -29,16 +33,21 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 import numpy as np
 
 from marmoset_developmental_agent.config.agent_config import ExposureScheduleConfig, PreprocessingConfig
-from marmoset_developmental_agent.preprocessing.filter_5khz import preprocess_waveform
 from marmoset_developmental_agent.preprocessing.segmentation import (
     CallSegment,
     Chunk,
-    activity_to_calls,
-    chunk_recording,
     detection_scores,
     drop_night_calls,
     label_calls_from_annotations,
+    plan_chunks,
     recording_entirely_at_night,
+)
+from marmoset_developmental_agent.preprocessing.streaming import (
+    ArraySource,
+    AudioSource,
+    FileSource,
+    detect_recording,
+    read_chunks,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,7 +55,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Recording:
-    """A continuous recording plus optional ground-truth call annotations."""
+    """An in-memory recording, ``(n,)`` or ``(n, channels)``, plus optional annotations."""
 
     audio: np.ndarray
     sample_rate: int
@@ -54,6 +63,27 @@ class Recording:
     recording_id: str
     day: Optional[int] = None
     annotations: List[CallSegment] = field(default_factory=list)
+
+
+@dataclass
+class RecordingFile:
+    """A raw recording on disk; audio is read only in blocks, never as a whole."""
+
+    path: str
+    start_time: dt.datetime
+    recording_id: str
+    day: Optional[int] = None
+    annotations: List[CallSegment] = field(default_factory=list)
+
+
+AnyRecording = Union[Recording, RecordingFile]
+
+
+def audio_source(rec: AnyRecording) -> AudioSource:
+    """The random-access audio behind either kind of recording."""
+    if isinstance(rec, RecordingFile):
+        return FileSource(rec.path)
+    return ArraySource(rec.audio, rec.sample_rate)
 
 
 class DailyExposureSchedule:
@@ -134,37 +164,34 @@ class ChronologicalDataset:
 
 
 def preprocess_recording(
-    rec: Recording, cfg: PreprocessingConfig
+    rec: AnyRecording, cfg: PreprocessingConfig
 ) -> Tuple[List[Chunk], Dict[str, float]]:
-    """GmSLM front-end for one recording: detect calls -> 16 kHz audio -> 10 s chunks.
-
-    ``preprocess_waveform`` owns both rate conversions (detection rate for the
-    detector, target rate for the audio), so there is no resampling here.
+    """Front-end for one recording: detect calls -> plan 10 s chunks -> read their audio.
 
     With ``cfg.exclude_night``, a recording lying entirely in the night window is
     skipped before detection (that is the compute saving), and night calls are dropped
-    from the rest. Ground-truth annotations are filtered by the same rule, so detection
-    scores are measured on the audio the pipeline actually uses.
+    from the rest (both inside ``detect_recording``). Ground-truth annotations are
+    filtered by the same rule, so detection scores are measured on the audio the pipeline
+    actually uses.
     """
+    src = audio_source(rec)
+    duration_s = src.frames / src.sample_rate
     annotations = list(rec.annotations)
     if cfg.exclude_night:
-        if recording_entirely_at_night(rec.start_time, len(rec.audio) / rec.sample_rate, cfg):
+        if recording_entirely_at_night(rec.start_time, duration_s, cfg):
             return [], {}
         annotations = drop_night_calls(annotations, rec.start_time, cfg)
-    audio_16k, activity = preprocess_waveform(rec.audio, rec.sample_rate, cfg)
-    calls = activity_to_calls(activity, cfg)
-    if cfg.exclude_night:
-        calls = drop_night_calls(calls, rec.start_time, cfg)
+    calls = [r.segment() for r in detect_recording(src, rec.start_time, cfg)]
     stats: Dict[str, float] = {}
     if annotations:
         stats = detection_scores(calls, annotations)
         calls = label_calls_from_annotations(calls, annotations)
-    chunks = chunk_recording(audio_16k, calls, cfg, rec.recording_id, rec.start_time, rec.day)
-    return chunks, stats
+    plans = plan_chunks(calls, cfg, duration_s)
+    return read_chunks(src, plans, cfg, rec.recording_id, rec.start_time, rec.day), stats
 
 
 def build_chronological_dataset(
-    recordings: Iterable[Recording],
+    recordings: Iterable[AnyRecording],
     pre_cfg: PreprocessingConfig,
     exp_cfg: ExposureScheduleConfig,
 ) -> Tuple[ChronologicalDataset, Dict[str, object]]:
@@ -214,26 +241,22 @@ def _runs(keys: Sequence[object]) -> Iterable[List[object]]:
 # --------------------------------------------------------------------------- #
 # Real-data I/O
 # --------------------------------------------------------------------------- #
-def load_recordings_from_manifest(manifest_csv: Union[str, Path]) -> List[Recording]:
-    """Load recordings listed in a CSV with columns ``path,start_time[,recording_id]``.
+def load_recordings_from_manifest(manifest_csv: Union[str, Path]) -> List[RecordingFile]:
+    """Recordings listed in a CSV with columns ``path,start_time[,recording_id]``.
 
-    ``start_time`` is ISO-8601. Relative paths resolve against the CSV's folder.
-    Everything is loaded eagerly; for 24/7 colony data, run this per day and
-    ``export_manifest`` incrementally.
+    ``start_time`` is ISO-8601. Relative paths resolve against the CSV's folder. Nothing is
+    read here: each file is streamed in blocks when it is preprocessed, and the capsules are
+    combined by the configured channel strategies rather than averaged on load.
     """
-    import soundfile as sf
-
     root = Path(manifest_csv).parent
-    recs: List[Recording] = []
+    recs: List[RecordingFile] = []
     with open(manifest_csv) as f:
         for row in csv.DictReader(f):
             path = Path(row["path"])
             path = path if path.is_absolute() else root / path
-            audio, sr = sf.read(str(path), dtype="float32", always_2d=True)
             recs.append(
-                Recording(
-                    audio=audio.mean(axis=1),
-                    sample_rate=sr,
+                RecordingFile(
+                    path=str(path),
                     start_time=dt.datetime.fromisoformat(row["start_time"]),
                     recording_id=row.get("recording_id") or path.stem,
                 )

@@ -206,7 +206,7 @@ def test_stft_scaling_matches_librosa_not_scipy():
     from marmoset_developmental_agent.config.agent_config import PreprocessingConfig
     from marmoset_developmental_agent.preprocessing.filter_5khz import _stft
 
-    cfg = PreprocessingConfig()
+    cfg = PreprocessingConfig.talia()
     sr = cfg.detection_sample_rate
     t = np.arange(sr) / sr
     x = (0.3 * np.sin(2 * np.pi * 7_000 * t)).astype(np.float32)

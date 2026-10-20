@@ -37,9 +37,9 @@ from marmoset_developmental_agent.config.agent_config import PreprocessingConfig
 from marmoset_developmental_agent.preprocessing.filter_5khz import preprocess_waveform
 from marmoset_developmental_agent.preprocessing.segmentation import activity_to_calls
 
-OURS = dataclasses.replace(PreprocessingConfig(), frame_features="spectral", bin_energy_threshold_db=15.0,
+OURS = dataclasses.replace(PreprocessingConfig.talia(), frame_features="spectral", bin_energy_threshold_db=15.0,
                            detection_sample_rate=48_000, spectral_max_freq_hz=16_000.0)
-TALIA = dataclasses.replace(PreprocessingConfig(), frame_features="talia")
+TALIA = PreprocessingConfig.talia()
 CONTEXT_S, GAP_S, PEAK = 0.15, 0.6, 0.5
 DAY_HOURS = (8.0, 18.0)
 

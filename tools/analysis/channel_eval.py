@@ -67,7 +67,7 @@ def _merge(intervals: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
 def evaluate_file(path: str, n_windows: int = 10, window_s: float = 30.0) -> Dict:
     info = sf.info(path)
     sr = info.samplerate
-    cfg = dataclasses.replace(PreprocessingConfig(), frame_features="spectral")
+    cfg = dataclasses.replace(PreprocessingConfig.talia(), frame_features="spectral")
     det_sr = cfg.detection_sample_rate
     span = int(window_s * sr)
     starts = np.linspace(0, max(0, info.frames - span), n_windows).astype(np.int64)

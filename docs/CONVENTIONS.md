@@ -5,11 +5,12 @@ Detail moved out of `CLAUDE.md` to keep that file short. Read the section that m
 ## Layout
 ```
 run_pipeline.py                 CLI orchestrating stages 1-7
-config/default.yaml             paper-scale overrides (provenance-tagged)
+config/default.yaml             production config (provenance-tagged); gmslm_arm.yaml = Talia's front-end (PreprocessingConfig.talia())
 marmoset_developmental_agent/
   config/agent_config.py        all dataclasses; AgentConfig.mock() = tiny CPU config; load_config/save_config (unknown YAML keys raise)
   io/                           raw_reader (bext timestamps, probe, streaming 4-ch blocks), channels (5 channel strategies)
-  preprocessing/                filter_5khz (HPF + frame activity) -> segmentation (calls, night window, 10 s Chunk) -> dataset_builder (ChronologicalDataset, F(d))
+  preprocessing/                filter_5khz (HPF + frame activity) -> segmentation (calls, night window, chunk plans, 10 s Chunk)
+                                -> streaming (blocked detection over a file, CallRecord catalogue, chunk audio) -> dataset_builder (ChronologicalDataset, F(d))
   encoders/                     BaseAudioEncoder ABC; MarmosetHuBERTEncoder (frozen, k-means); DinoSREncoder (trainable, EMA teacher, online codebooks)
   decoders/transformer_ulm.py   UnitLanguageModel (PAD=0, BOS=1, EOS=2, unit u -> id u+3)
   agent/                        lr_scheduler (sigmoid gate), replay_buffer (wake + sleep), trainer (day loop), factory (build/save/load)
@@ -21,6 +22,7 @@ tools/
   analysis/                     level_audit, aggregate_levels, verify_talia_port (the port gate), channel_eval,
                                 score_detectors, listen_detections, call_inventory
   labels/                       make_clips, make_guide, import_audacity, review_labels (hand-label workflow, see LABELING.md)
+  corpus/                       detect_corpus (array job: per-recording call catalogue), summarize_corpus (per-date / hour / quality / label check)
   cluster/                      env.sh, setup_env.sh, *.sbatch (ELSC SLURM jobs)
 docs/                           ROADMAP, OPEN_DECISIONS, SESSION_STATE, DETECTOR_EVAL, LABELING, CODEMAP; audit/ = GmSLM code audit
 data/labels/                    hand labels (calibration: handlabels.csv, held-out: heldout_labels.csv)

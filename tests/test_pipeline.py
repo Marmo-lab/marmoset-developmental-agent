@@ -307,7 +307,7 @@ def test_talia_durations_round_trip_to_her_frame_counts():
     detection rate can change without moving the thresholds. The two must agree at
     her rate, or we have silently redefined a threshold.
     """
-    p = PreprocessingConfig()
+    p = PreprocessingConfig.talia()
     assert p.detection_sample_rate == 22_050 and p.hop_length == 512
     assert p.to_frames(p.min_call_duration_s) == 10  # paper rounds to 0.25 s
     assert p.min_run_members == 3  # find_consecutive_series keeps groups with > 2 members
@@ -346,7 +346,7 @@ def _tone_burst(
 
 @pytest.mark.parametrize("features", ["talia", "spectral"])
 def test_both_feature_paths_detect_a_tone_burst(features):
-    p = PreprocessingConfig(frame_features=features)
+    p = PreprocessingConfig.talia() if features == "talia" else PreprocessingConfig()
     wav = _tone_burst(48_000, dur_s=1.0, freq_hz=7_000, onset_s=1.0, total_s=3.0)
     audio_16k, activity = preprocess_waveform(wav, 48_000, p)
     assert audio_16k.dtype == np.float32
@@ -363,14 +363,17 @@ def test_both_feature_paths_detect_a_tone_burst(features):
 
 def test_talia_path_populates_its_features_and_spectral_path_does_not():
     wav = _tone_burst(48_000, dur_s=0.8, freq_hz=7_000, onset_s=0.5, total_s=2.0)
-    talia = preprocess_waveform(wav, 48_000, PreprocessingConfig(frame_features="talia"))[1]
+    talia = preprocess_waveform(wav, 48_000, PreprocessingConfig.talia())[1]
     assert talia.freq_range_hz is not None and talia.bandwidth_bins is not None
     assert talia.density is None and talia.variance_db2 is None
     assert talia.bandwidth_bins.max() > 0
-    spectral = preprocess_waveform(wav, 48_000, PreprocessingConfig(frame_features="spectral"))[1]
+    spectral = preprocess_waveform(wav, 48_000, PreprocessingConfig())[1]
     assert spectral.density is not None and spectral.variance_db2 is not None
     assert spectral.freq_range_hz is None
     assert talia.tonal is None and spectral.tonal is not None
+    assert talia.peak_freq_hz is None
+    loud = spectral.peak_db > 20
+    assert np.median(spectral.peak_freq_hz[loud]) == pytest.approx(7_000, abs=48_000 / 2048)
 
 
 def test_spectral_detector_sees_high_calls_only_at_a_higher_rate():
@@ -381,11 +384,11 @@ def test_spectral_detector_sees_high_calls_only_at_a_higher_rate():
     wav = _tone_burst(48_000, dur_s=0.8, freq_hz=13_000, onset_s=1.0, total_s=3.0, noise=1e-3, amplitude=0.05)
 
     def calls(**kw):
-        p = PreprocessingConfig(frame_features="spectral", **kw)
+        p = PreprocessingConfig(**kw)
         return activity_to_calls(preprocess_waveform(wav, 48_000, p)[1], p)
 
-    assert not calls()
-    found = calls(detection_sample_rate=48_000, spectral_max_freq_hz=16_000.0)
+    assert not calls(detection_sample_rate=22_050, spectral_max_freq_hz=None)
+    found = calls()  # the production default: 48 kHz with a 16 kHz ceiling
     assert any(c.start_s < 1.4 and c.end_s > 1.4 for c in found)
     assert not calls(detection_sample_rate=48_000, spectral_max_freq_hz=12_000.0)
 
@@ -402,8 +405,7 @@ def test_tonality_rejection_keeps_an_fm_call_and_drops_band_noise():
     wav[int(2.5 * sr):int(2.5 * sr) + n] += (0.003 * burst / burst.std()).astype(np.float32)
 
     def mids(**kw):
-        p = PreprocessingConfig(frame_features="spectral", detection_sample_rate=48_000,
-                                spectral_max_freq_hz=16_000.0, **kw)
+        p = PreprocessingConfig(**kw)
         return sorted(round((c.start_s + c.end_s) / 2) for c in activity_to_calls(preprocess_waveform(wav, sr, p)[1], p))
 
     assert mids(min_tonal_fraction=None) == [1, 3]
@@ -412,7 +414,7 @@ def test_tonality_rejection_keeps_an_fm_call_and_drops_band_noise():
 
 def test_detection_runs_at_detection_rate_not_native_rate():
     """Frame times must be spaced by hop / detection_sample_rate regardless of input rate."""
-    p = PreprocessingConfig()
+    p = PreprocessingConfig.talia()
     wav = _tone_burst(48_000, dur_s=0.5, freq_hz=7_000, onset_s=0.5, total_s=2.0)
     activity = preprocess_waveform(wav, 48_000, p)[1]
     assert activity.hop_s == pytest.approx(p.hop_s())

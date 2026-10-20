@@ -180,25 +180,27 @@ def drop_night_calls(
     return [c for c in calls if not in_night_window(start + dt.timedelta(seconds=c.start_s), cfg)]
 
 
-def chunk_recording(
-    audio_16k: np.ndarray,
-    calls: Sequence[CallSegment],
-    cfg: PreprocessingConfig,
-    recording_id: str,
-    start_time: dt.datetime,
-    recording_day: Optional[int] = None,
-) -> List[Chunk]:
-    """Greedily pack calls into non-overlapping ``chunk_duration_s`` windows."""
-    sr = cfg.target_sample_rate
-    n_chunk = int(round(cfg.chunk_duration_s * sr))
+@dataclass
+class ChunkPlan:
+    """Where a chunk sits in its recording and which calls it holds, before any audio is read."""
+
+    offset_s: float  # chunk start within the recording
+    calls: List[CallSegment]  # relative to the chunk start
+
+
+def plan_chunks(calls: Sequence[CallSegment], cfg: PreprocessingConfig, rec_len_s: float) -> List[ChunkPlan]:
+    """Greedily pack calls into non-overlapping ``chunk_duration_s`` windows.
+
+    Needs only the call times, so the corpus run can count chunks from the call catalogue
+    and read audio for the chunks alone (``streaming.read_chunks``).
+    """
     calls = sorted(calls, key=lambda c: c.start_s)
-    chunks: List[Chunk] = []
+    plans: List[ChunkPlan] = []
     i = 0
-    rec_len_s = len(audio_16k) / sr
     while i < len(calls):
         c0 = max(0.0, calls[i].start_s - cfg.chunk_pre_pad_s)
-        if chunks:  # never overlap the previous chunk
-            c0 = max(c0, chunks[-1].offset_s + cfg.chunk_duration_s)
+        if plans:  # never overlap the previous chunk
+            c0 = max(c0, plans[-1].offset_s + cfg.chunk_duration_s)
         c1 = c0 + cfg.chunk_duration_s
         inside: List[CallSegment] = []
         j = i
@@ -212,7 +214,24 @@ def chunk_recording(
         i = j
         if len(inside) < cfg.min_calls_per_chunk or c0 >= rec_len_s:
             continue
-        s0 = int(round(c0 * sr))
+        plans.append(ChunkPlan(c0, inside))
+    return plans
+
+
+def chunk_recording(
+    audio_16k: np.ndarray,
+    calls: Sequence[CallSegment],
+    cfg: PreprocessingConfig,
+    recording_id: str,
+    start_time: dt.datetime,
+    recording_day: Optional[int] = None,
+) -> List[Chunk]:
+    """:func:`plan_chunks`, then slice each window out of in-memory 16 kHz audio."""
+    sr = cfg.target_sample_rate
+    n_chunk = int(round(cfg.chunk_duration_s * sr))
+    chunks: List[Chunk] = []
+    for plan in plan_chunks(calls, cfg, len(audio_16k) / sr):
+        s0 = int(round(plan.offset_s * sr))
         wav = audio_16k[s0 : s0 + n_chunk]
         if len(wav) < n_chunk:
             wav = np.pad(wav, (0, n_chunk - len(wav)))
@@ -221,9 +240,9 @@ def chunk_recording(
                 waveform=wav.astype(np.float32),
                 sample_rate=sr,
                 recording_id=recording_id,
-                start_time=start_time + dt.timedelta(seconds=c0),
-                offset_s=c0,
-                calls=inside,
+                start_time=start_time + dt.timedelta(seconds=plan.offset_s),
+                offset_s=plan.offset_s,
+                calls=plan.calls,
                 recording_day=recording_day,
             )
         )
