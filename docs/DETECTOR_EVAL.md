@@ -110,3 +110,12 @@ All numbers are on day clips, with `?` counted as calls unless noted.
     A beep is one fixed device sound, so an exact-frequency template is legitimate here, unlike call templates. It is
     worth building only if the full-corpus run shows beeps are common. In the labelled set they are a handful of 520
     detections.
+
+## Held-out test (pre-registered 2026-10-20, written before scoring)
+**Set:** 15 day clips (`ho_01`–`ho_15`), from recordings not used for calibration and mostly from new dates. The user
+labelled them by ear: 208 labels (163 `c`, 45 `?`); 5 clips have no calls. Imported to `data/labels/heldout_labels.csv`.
+
+**Rule:** score once, with no tuning on this set.
+- Choose between the two calibrated candidates (48k-16k, floor 0.23, tonal ≥ 0.5): **@12** if its chunk P ≥ 0.85 with `?`
+  counted as calls (C13: recall first under that constraint), otherwise **@15**.
+- Everything else (Talia as run, the no-rejection configurations) is reported for context only.
