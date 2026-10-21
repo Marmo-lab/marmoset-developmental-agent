@@ -142,9 +142,7 @@ count (1), not on the missing timestamp.
   - The Talia preset is identical field by field (checked locally). pytest 68 pass, ruff clean, mock 69 s.
 
 **Pending, in order:**
-1. **Port gate on the cluster** (`sbatch tools/cluster/verify_port.sbatch`, after `git pull` in the clone). It is
-   required for this change and was not run: the cluster was unreachable off the lab network. The Talia code path is
-   untouched, so 23/23 is expected.
+1. DONE: **port gate passed** after this change (job 63944349): 23/23 matched, recall and precision vs hers 1.000.
 2. **Decision: training sample rate.** 16 kHz training audio removes the fundamental of 29% of calls and the
    harmonics of nearly all. The user has said GmSLM is not binding. Options:
    - 48 kHz, which keeps everything.
