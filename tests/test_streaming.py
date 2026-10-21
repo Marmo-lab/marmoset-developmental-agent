@@ -160,3 +160,32 @@ def test_corpus_run_writes_the_catalogue_and_scores_labelled_minutes(wav, tmp_pa
     files = {"R_210601_001": {"path": str(wav)}}
     res = label_check(files, tmp_path, str(clips), str(labels))
     assert res["day_c+?"]["P"] == res["day_c+?"]["R"] == 1.0
+
+
+def test_merge_builds_a_chronological_manifest_and_drops_duplicate_copies(wav, tmp_path):
+    """tools/corpus/merge_corpus: per-recording chunk lists -> one manifest the agent loads.
+
+    The same file under a second folder, with a later recording in between alphabetically,
+    must appear once, and rows must follow wall-clock time rather than recording ids.
+    """
+    import shutil
+
+    from marmoset_developmental_agent.preprocessing.dataset_builder import load_manifest
+    from tools.corpus.detect_corpus import process
+    from tools.corpus.merge_corpus import merge
+
+    copy = tmp_path / "Rec_B" / wav.name
+    copy.parent.mkdir()
+    shutil.copy(wav, copy)
+    out = tmp_path / "run"
+    for path, start, rid in [(wav, START + dt.timedelta(hours=1), "Rec_A_001"),
+                             (copy, START + dt.timedelta(hours=1), "Rec_B_001"),
+                             (wav, START, "Rec_C_001")]:
+        process(RecordingFile(str(path), start, rid), out, PreprocessingConfig(), export_audio=True)
+    s = merge(out)
+    assert s["duplicates_dropped"] == ["Rec_B_001"] and s["n_recordings"] == 2
+    ds = load_manifest(out / "manifest.tsv")
+    assert len(ds) == s["n_chunks"] == sum(ds.day_sizes)
+    assert [c.start_time for c in ds.chunks] == sorted(c.start_time for c in ds.chunks)
+    assert ds.chunks[0].recording_id == "Rec_C_001"
+    assert ds.chunks[0].audio().shape == (160_000,) and ds.chunks[0].calls
