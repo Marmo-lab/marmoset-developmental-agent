@@ -5,7 +5,7 @@ lands. Read this first on reconnect: it should be enough to resume without re-de
 anything. Long-lived decisions live in `OPEN_DECISIONS.md`; this file is "where are we
 right now".
 
-**Last updated:** 2026-10-20
+**Last updated:** 2026-10-21
 
 ---
 
@@ -134,19 +134,34 @@ A. DONE (0b0d794): `PreprocessingConfig()` is the chosen detector; `Preprocessin
 B. DONE (0b0d794): `preprocessing/streaming.py`: 60 s blocks + 5 s context, `CallRecord` catalogue (wall-clock time,
    SNR, tonal fraction, dominant frequency + IQR), chunk audio read per window with `training_channel_strategy`
    (ambisonic_beam; detection on mean). `dataset_builder` streams `RecordingFile`s.
-C. IN PROGRESS: `tools/corpus/detect_corpus.py` + `tools/cluster/detect_corpus.sbatch` (resumable array job, catalogue
-   only; chunk audio export is opt-in and needs ~100+ GB on the shared FS: ask first). Pilot = the 45 recordings
-   behind the labelled clips (`RUN=pilot`, jobs 63091739 + 63095025): 45-85 s per hour-long file on one core.
-   **The production path reproduces the evaluation** (labelled minutes, `?` counted as calls): held-out P 0.81 /
-   R 0.77 / chunk P 0.96 / chunk R 0.93 (evaluated on clips: 0.80 / 0.79 / 0.94 / 0.92); calibration P 0.87 /
-   R 0.88. Pilot also shows: calls per audio-hour ~0 from 19:00 to 05:00 and 350-1660 by day; detected durations
-   match the labels except < 0.3 s (2.9% vs 12.3%, the known short-call gap, D26); median SNR 24 dB; no fixed-tone
-   spike (no frequency bin above 8 flat calls in 45 h, so the door beep is rare). ~200 chunks per hour of day audio.
-   2026-10-20, user decisions: night is not processed, and chunk audio is stored under `~/marmoset_work`. So `RUN=v1`
-   (job 63100169, catalogue only, night included) was cancelled at 59/2719 recordings and replaced by
-   `RUN=v2_day`: `--config config/corpus_day.yaml --export-audio`, 136 tasks, 16 at once. Outputs in
-   `~/marmoset_work/corpus/v2_day/` (calls/, files/, chunks/<recording_id>/*.wav + chunks.tsv). Next: summarize_corpus on
-   v2_day, then merge the per-recording chunks.tsv into one chronological manifest.tsv + day_sizes.json for training.
+C. DONE: `tools/corpus/detect_corpus.py` + `tools/cluster/detect_corpus.sbatch` (resumable array job),
+   `summarize_corpus.py`, `merge_corpus.py` (a523397). Pilot = the 45 recordings behind the labelled clips (`RUN=pilot`).
+   2026-10-20 user decisions: night is not processed, chunk audio is stored under `~/marmoset_work`; `RUN=v1` (catalogue
+   with night) was cancelled at 59/2719 and replaced by **`RUN=v2_day`** (job 63105484: `--config config/corpus_day.yaml
+   --export-audio`, 136 tasks, 16 at once; finished overnight, **2719/2719, 0 errors**, 1114 all-night files skipped
+   unread). Outputs in `~/marmoset_work/corpus/v2_day/`: `calls/`, `files/`, `chunks/<recording_id>/*.wav + chunks.tsv`,
+   `summary.json`, `per_date.csv`, `fixed_tone_examples.csv`, `fixed_tone_10875.png`, and the **training manifest**
+   `manifest.tsv` + `day_sizes.json` (job 63901147; loads with `dataset_builder.load_manifest`).
+   Results (after dropping duplicates):
+   - **344,900 chunks = 958 h** of 10 s training audio from 2,602 recordings, 1.81 M calls (361 h of calls), 137 dates
+     2021-05-03 .. 2021-10-12; chunk-hours per date p5 1.0 / median 7.9 / p95 9.8. Default F(d) cuts it into 265
+     simulated days (720 chunks/day at 2 h). Disk: 254 GB allocated for ~115 GB of WAVs: the share allocates
+     736 KB per 320 KB chunk file (2.3x). Packing chunks per recording (one file + offsets) would halve it; the 117
+     duplicate recordings' chunks (~11 GB) can be deleted, both pending the user's OK.
+   - **The production path reproduces the evaluation** on the labelled minutes (`?` counted as calls): held-out P 0.81 /
+     R 0.77 / chunk P 0.96 / chunk R 0.93; calibration P 0.87 / R 0.88 / chunk R 0.97; 0 detections in night clips.
+   - Calls per audio-hour by clock hour: 06h 458, 07h 1665, 10-12h ~1000, 15-17h ~1600-1700, 18h 800; night 0 by design.
+   - Durations: detected p5/p50/p95 0.30/0.55/1.82 s vs labels 0.25/0.52/2.04 (short-call gap, D26). SNR median 24 dB
+     (p5 17); tonal fraction median 0.88.
+   - **Duplicate copies on the shared drive:** `Rec_2021_07_14-17` holds byte-identical copies of all 116 files of
+     `Rec_2021_07_08-13` (identical catalogues), so the real July 14-17 recordings are probably missing from the share
+     (tell the lab). `210627_075` is in `Rec_2021_06_24-27` and in `Rec_2021_06_29`, where it is zeros after ~10 min
+     (a truncated copy). `merge_corpus.deduplicate` keeps one copy (most calls, then earliest folder); `summary.json`
+     and `per_date.csv` still count both copies (Jul 8-13 show ~47 h audio/date).
+   - **Fixed tone found: 10,875 Hz**, a flat pulsed line with no harmonics (`fixed_tone_10875.png`): an electronic
+     device, not a call. ~770 detections, mostly 2021-09-10..12 (434/229/104), a few elsewhere; 0.04% of calls. Not
+     filtered yet: the catalogue has `peak_freq_hz`/`peak_freq_iqr_hz`, so a filter is a decision, not a re-run. The
+     other top flat bins (7.7-9.2 kHz, spread over neighbouring bins) are phee-like calls, not device tones.
 D. Optional: D26 (floor 0.1) needs ~10 fresh clips.
 E. wandb: build `LoggingConfig` + logger (E21) before the first GPU training run.
 F. Frozen-HuBERT units + D24 metrics, then the agent.
