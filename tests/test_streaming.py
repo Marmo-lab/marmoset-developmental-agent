@@ -149,7 +149,9 @@ def test_corpus_run_writes_the_catalogue_and_scores_labelled_minutes(wav, tmp_pa
     s = process(rec, tmp_path, PreprocessingConfig(), export_audio=True)
     assert s["n_calls"] == len(CALLS) and s["n_chunks"] >= 1
     rows = (tmp_path / "calls" / "R_210601_001.csv").read_text().splitlines()
-    assert len(rows) == 1 + len(CALLS) and rows[1].split(",")[3].startswith("2021-06-01T10:00:00.99")
+    assert len(rows) == 1 + len(CALLS)
+    onset = dt.datetime.fromisoformat(rows[1].split(",")[3])
+    assert abs((onset - START).total_seconds() - CALLS[0][0]) < 0.05  # pad + half an STFT window
     assert len(list((tmp_path / "chunks" / "R_210601_001").glob("*.wav"))) == s["n_chunks"]
 
     clips = tmp_path / "clips.csv"

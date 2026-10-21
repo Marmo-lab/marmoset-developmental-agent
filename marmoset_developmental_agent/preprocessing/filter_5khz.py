@@ -58,6 +58,27 @@ Two interchangeable implementations of step 3 live here, selected by
     its frequency are kept too, as per-call quality features (SNR, pitch) for the corpus
     catalogue (``streaming.py``).
 
+    With ``harmonic_min_contrast_db`` set, each frame is also tested for a harmonic comb
+    over the whole band from the cutoff to Nyquist (not just up to
+    ``spectral_max_freq_hz``, since second harmonics reach 20+ kHz):
+
+        C[k, f0, t] = R[k f0, t] - max(R[(k - 1/2) f0, t], R[(k + 1/2) f0, t])
+        H[f0, t]    = second largest C[k, f0, t] over k
+        harmonic[t] = max_{f0} H[f0, t] >= harmonic_min_contrast_db
+
+    where ``R`` is the above-floor spectrum max-filtered over +-``harmonic_tol_bins`` (so
+    FM-smeared lines still register) and ``k`` runs over the multiples of ``f0`` inside
+    the band. Each partial must stand above the louder of its two neighbouring troughs
+    (only the upper one for a fundamental whose lower trough is below the cutoff), so a
+    spectrum that merely drops off at a band edge does not look like a comb, and at least
+    two partials must do so, so a single band of noise (cage noise in the call band, or a
+    lone line) does not either. Flat or band-limited noise gives H <= 0; a line spectrum at
+    integer multiples gives a large H however many bins it fills. A harmonic frame is
+    exempt from the density cap and counts as tonal, which keeps the loud pulsed harmonic
+    stacks that the density cap and tonality rejection otherwise discard as cage noise
+    (DETECTOR_EVAL finding 11: 15 of the 50 labelled calls the detector missed, and its
+    loudest ones).
+
 Detection runs at ``detection_sample_rate``: the native 48 kHz in production, 22050 Hz
 (librosa's default resample) in ``PreprocessingConfig.talia()``. The high-pass filter
 applies to detection only -- the audio handed downstream is unfiltered unless
@@ -97,6 +118,7 @@ class FrameActivity:
     tonal: Optional[np.ndarray] = None  # (T,) bool, narrow-line frame
     peak_db: Optional[np.ndarray] = None  # (T,) loudest in-band bin above its floor, dB
     peak_freq_hz: Optional[np.ndarray] = None  # (T,) frequency of that bin
+    harmonic: Optional[np.ndarray] = None  # (T,) bool, harmonic-comb frame
 
 
 def highpass_filter(
@@ -231,27 +253,57 @@ def _talia_frame_activity(
     )
 
 
+def _harmonic_frames(
+    freqs: np.ndarray, rel_full: np.ndarray, cfg: PreprocessingConfig
+) -> np.ndarray:
+    """Per-frame harmonic-comb test (see the module docstring); ``rel_full`` is (F, T) in
+    dB above each bin's floor, over every bin from the high-pass cutoff to Nyquist."""
+    from scipy.ndimage import maximum_filter1d
+
+    df = freqs[1] - freqs[0]
+    r = maximum_filter1d(rel_full, size=2 * cfg.harmonic_tol_bins + 1, axis=0)
+    lo_f, hi_f = freqs[0], freqs[-1]
+    best = np.full(rel_full.shape[1], -np.inf, dtype=np.float32)
+    for f0 in np.arange(cfg.harmonic_f0_min_hz, cfg.harmonic_f0_max_hz + 1e-6, cfg.harmonic_f0_step_hz):
+        ks = np.arange(1, int((hi_f - 0.5 * f0) // f0) + 1)
+        ks = ks[ks * f0 >= lo_f]
+        if ks.size < 2:
+            continue
+        on = np.round((ks * f0 - lo_f) / df).astype(int)
+        above = r[np.round(((ks + 0.5) * f0 - lo_f) / df).astype(int)]  # always in band
+        below_f = (ks - 0.5) * f0
+        below = np.where((below_f >= lo_f)[:, None],
+                         r[np.clip(np.round((below_f - lo_f) / df).astype(int), 0, None)], -np.inf)
+        contrast = r[on] - np.maximum(above, below)  # (K, T), one row per partial
+        best = np.maximum(best, np.sort(contrast, axis=0)[-2])  # the second-best partial
+    return best >= cfg.harmonic_min_contrast_db
+
+
 def _spectral_frame_activity(
     audio: np.ndarray, sample_rate: int, cfg: PreprocessingConfig
 ) -> FrameActivity:
     """Our noise-floor / density / variance frame classifier."""
     freqs, times, mag = _stft(audio, sample_rate, cfg)
-    band = freqs >= cfg.highpass_cutoff_hz
+    full = freqs >= cfg.highpass_cutoff_hz
+    band = full.copy()
     if cfg.spectral_max_freq_hz is not None:
         band &= freqs <= cfg.spectral_max_freq_hz
-    s_db = 10 * np.log10(mag[band] ** 2 + 1e-12)  # (F_band, T)
-    rel = s_db - np.median(s_db, axis=1, keepdims=True)
+    s_db = 10 * np.log10(mag[full] ** 2 + 1e-12)  # (F_full, T)
+    rel_full = s_db - np.median(s_db, axis=1, keepdims=True)
+    rel = rel_full[band[full]]  # (F_band, T)
     density = (rel > cfg.bin_energy_threshold_db).mean(axis=0)
     variance = rel.var(axis=0)
     peak = rel.max(axis=0)
     peak_freq = freqs[band][rel.argmax(axis=0)]
     width_hz = (rel > peak - cfg.tonal_peak_db).sum(axis=0) * (freqs[1] - freqs[0])
     tonal = (peak > cfg.tonal_peak_db) & (width_hz < cfg.tonal_max_bandwidth_hz)
-    active = (
-        (density >= cfg.min_active_bin_fraction)
-        & (density <= cfg.max_active_bin_fraction)
-        & (variance >= cfg.min_spectral_variance_db2)
-    )
+    harmonic = None
+    dense_ok = density <= cfg.max_active_bin_fraction
+    if cfg.harmonic_min_contrast_db is not None:
+        harmonic = _harmonic_frames(freqs[full], rel_full, cfg)
+        tonal = tonal | harmonic
+        dense_ok = dense_ok | harmonic
+    active = (density >= cfg.min_active_bin_fraction) & dense_ok & (variance >= cfg.min_spectral_variance_db2)
     return FrameActivity(
         frame_times_s=times,
         active=active,
@@ -261,6 +313,7 @@ def _spectral_frame_activity(
         tonal=tonal,
         peak_db=peak,
         peak_freq_hz=peak_freq,
+        harmonic=harmonic,
     )
 
 

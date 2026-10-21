@@ -412,6 +412,35 @@ def test_tonality_rejection_keeps_an_fm_call_and_drops_band_noise():
     assert mids(min_tonal_fraction=0.5) == [1]
 
 
+def test_harmonic_stack_survives_the_density_cap_and_broadband_noise_does_not():
+    """A pulsed harmonic stack (f0 6.5 kHz, 2.5 kHz-wide partials at 6.5 / 13 / 19.5 kHz)
+    fills more than ``max_active_bin_fraction`` of 5-16 kHz, as the loud stacked calls do
+    on real data, and its partials are too wide to be tonal. Without the harmonic test
+    it is discarded; with it the stack is kept. A 5-16 kHz noise burst of the same length
+    and level has no comb, so it is rejected either way (DETECTOR_EVAL finding 11)."""
+    sr, n = 48_000, int(0.8 * 48_000)
+    rng = np.random.default_rng(0)
+    wav = (1e-3 * rng.standard_normal(5 * sr)).astype(np.float32)
+    stack = np.zeros(n)
+    for k in (1, 2, 3):
+        f = 6_500 * k
+        part = signal.sosfilt(signal.butter(4, [f - 1_250, f + 1_250], "bandpass", fs=sr, output="sos"),
+                              rng.standard_normal(n))
+        stack += part / part.std() / k
+    stack *= 0.5 + 0.5 * np.sin(2 * np.pi * 25 * np.arange(n) / sr) ** 2  # 50 Hz pulses
+    wav[sr:sr + n] += (0.02 * stack / stack.std()).astype(np.float32)
+    burst = signal.sosfilt(signal.butter(6, [5_000, 16_000], "bandpass", fs=sr, output="sos"), rng.standard_normal(n))
+    wav[3 * sr:3 * sr + n] += (0.02 * burst / burst.std()).astype(np.float32)
+
+    def mids(**kw):
+        p = PreprocessingConfig(**kw)
+        act = preprocess_waveform(wav, sr, p)[1]
+        return sorted(round((c.start_s + c.end_s) / 2 * 2) / 2 for c in activity_to_calls(act, p))
+
+    assert mids(harmonic_min_contrast_db=None) == []
+    assert mids() == [1.5]
+
+
 def test_detection_runs_at_detection_rate_not_native_rate():
     """Frame times must be spaced by hop / detection_sample_rate regardless of input rate."""
     p = PreprocessingConfig.talia()

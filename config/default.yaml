@@ -50,11 +50,16 @@ preprocessing:                     # [GmSLM] A.1-A.2, reconciled with [talia] vi
   tonal_peak_db: 10.0              # tonal frame: peak > floor + this, ...
   tonal_max_bandwidth_hz: 2000.0   # ... and bins within this many dB of it span < 2 kHz
   min_tonal_fraction: 0.5          # reject calls with fewer tonal frames; null = off
+  harmonic_min_contrast_db: 10.0   # harmonic-comb frames skip the density cap; null = off
+  harmonic_f0_min_hz: 4000.0
+  harmonic_f0_max_hz: 12000.0
+  harmonic_f0_step_hz: 25.0
+  harmonic_tol_bins: 2
   # shared run grouping and duration limits
   merge_gap_s: 0.0929             # 4 frames
   min_run_members: 3               # groups need > 2 member frames
-  min_call_duration_s: 0.2322     # 10 frames; [GmSLM] rounds this to 0.25 s
-  max_call_duration_s: 4.0        # [GmSLM] + [talia], exact agreement
+  min_call_duration_s: 0.15       # [ours]; talia preset 0.2322 (10 frames)
+  max_call_duration_s: 8.0        # [ours]; talia preset 4.0
   # channels and streaming (ours)
   detection_channel_strategy: mean            # capsules -> detection signal (second-order; held-out used mean)
   training_channel_strategy: ambisonic_beam   # capsules -> training audio (+2.45 dB call-band range by day)

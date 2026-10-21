@@ -127,6 +127,19 @@ class PreprocessingConfig:
     tonal_peak_db: float = 10.0  # [ours]
     tonal_max_bandwidth_hz: float = 2_000.0  # [ours]
     min_tonal_fraction: Optional[float] = 0.5  # [ours]
+    # Harmonic-comb frames (filter_5khz._harmonic_frames; DETECTOR_EVAL finding 11). The
+    # hand-labelled calls are harmonic: lowest band median 7.0 kHz (p5-p95 4.6-9.7), and
+    # the second band sits at 1.9-2.0x the first. Frames whose comb contrast reaches this
+    # many dB bypass the density cap and count as tonal. None disables the test (the
+    # detector as held-out-tested on 2026-10-20). 10 dB was set on the calibration clips
+    # (with the 0.15 s / 8 s limits below: R 0.94 -> 0.95, call-time R 0.79 -> 0.90, P 0.82
+    # -> 0.80); looser values add broadband false alarms, at night too. f0 range covers the
+    # labelled lowest bands; +-2 bins (+-47 Hz at 48 kHz / 2048) absorbs FM smear.
+    harmonic_min_contrast_db: Optional[float] = 10.0  # [ours]
+    harmonic_f0_min_hz: float = 4_000.0  # [ours]
+    harmonic_f0_max_hz: float = 12_000.0  # [ours]
+    harmonic_f0_step_hz: float = 25.0  # [ours]
+    harmonic_tol_bins: int = 2  # [ours]
 
     # --- shared run grouping and duration limits -------------------------------- #
     # [talia] Gaps <= 4 frames between active frames are bridged into one call
@@ -135,11 +148,16 @@ class PreprocessingConfig:
     # [talia] find_consecutive_series drops groups with <= 2 *members*. A count of
     # active frames, not a duration, so it is not stored in seconds.
     min_run_members: int = 3
-    # [talia] Duration is tested on the unpadded frame span (last - first), strictly:
-    # span > 10 frames and span < 4 s. The paper rounds the floor to 0.25 s. Padding
+    # Duration is tested on the unpadded frame span (last - first), strictly; padding
     # (boundary_pad_s) is applied only after these tests, as in her save_calls.
-    min_call_duration_s: float = 0.2322
-    max_call_duration_s: float = 4.0  # [paper] + [talia]
+    # [talia] span > 10 frames (0.2322 s; the paper rounds it to 0.25 s) and span < 4 s;
+    # :meth:`talia` restores both. [ours] 0.15 s / 8 s (DETECTOR_EVAL finding 11): the 0.2322 s
+    # floor missed 56% of the labelled 0.2-0.3 s calls, and with the harmonic test the
+    # pulsed stacks join into runs longer than 4 s, which the 4 s ceiling then discarded whole.
+    # Held-out, with both and the harmonic test: R 0.79 -> 0.93, call-time R 0.65 -> 0.85,
+    # P 0.80 -> 0.78, chunk P 0.94 -> 0.94, chunk R 0.92 -> 0.99.
+    min_call_duration_s: float = 0.15  # [ours]
+    max_call_duration_s: float = 8.0  # [ours]
 
     # --- channels and streaming [ours] ------------------------------------------ #
     # How the four capsules become the signal detection runs on, and the signal the
@@ -186,7 +204,8 @@ class PreprocessingConfig:
         defaults; the "spectral" fields are unused on this path.
         """
         return cls(frame_features="talia", detection_sample_rate=22_050, spectral_max_freq_hz=None,
-                   detection_channel_strategy="mean", training_channel_strategy="mean")
+                   detection_channel_strategy="mean", training_channel_strategy="mean",
+                   min_call_duration_s=0.2322, max_call_duration_s=4.0, harmonic_min_contrast_db=None)
 
     def hop_s(self) -> float:
         """Seconds per STFT frame at the detection rate."""

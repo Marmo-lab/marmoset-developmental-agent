@@ -8,3 +8,6 @@ preprocessing:
   spectral_max_freq_hz: null       # unused on the talia path
   detection_channel_strategy: mean # librosa's mono mixdown
   training_channel_strategy: mean
+  min_call_duration_s: 0.2322      # 10 frames at 22050 Hz
+  max_call_duration_s: 4.0
+  harmonic_min_contrast_db: null   # ours; not in her detector

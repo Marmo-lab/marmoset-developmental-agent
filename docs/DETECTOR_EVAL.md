@@ -140,3 +140,64 @@ labelled them by ear: 208 labels (163 `c`, 45 `?`); 5 clips have no calls. Impor
   1.00. Pooled over all 39 day clips, P 0.80 / R 0.88 / chunk P 0.88 / chunk R 0.99, against P 0.85 / R 0.85 / chunk
   P 0.89 / chunk R 0.94 for the chosen config. It is the next candidate, but no untouched test set is left to confirm
   it, so it needs fresh labels (OPEN_DECISIONS D26).
+
+## Finding 11: calls are harmonic, not narrow (2026-10-21)
+**What the labels look like.** All 527 labels (461 `c`, 66 `?`, calibration + held-out) were measured on the raw
+4-capsule mean at 48 kHz, 0–24 kHz, against the 2026-10-20 production detector:
+- The lowest energy band has median 7.0 kHz (p5–p95 4.6–9.7). In 29% of calls it is above 8 kHz.
+- The second band sits at 1.9–2.0× the first: the calls are harmonic. 87% of calls have energy above 8 kHz, which
+  16 kHz training audio removes.
+- Call shapes vary widely (flat phees, short up-sweeps, arches, loud pulsed stacks), but all are a fundamental with
+  integer partials and a smooth contour. Cage noise is a vertical smear with no comb.
+
+**What the detector missed** (event recall 0.89 on `c`; 50 misses):
+- 31 are short, faint tonal notes of 0.2–0.35 s. The 0.2322 s floor, tested on the detected span, removes them: recall
+  0.44 at 0.2–0.3 s.
+- 15 are the loudest calls: pulsed harmonic stacks with 0.5–0.65 of the 5–16 kHz bins active. The 0.35 density cap,
+  meant for cage noise, discards them. That is why recall at > 40 dB peak SNR (0.86) is below recall at 30–40 dB (0.95).
+
+**Fix** (`harmonic_min_contrast_db`, `filter_5khz._harmonic_frames`):
+- A per-frame harmonic-comb test over 5–24 kHz, f0 from 4 to 12 kHz. Each partial is scored against the louder of its
+  two neighbouring troughs, so a spectrum that drops off at a band edge does not pass. The frame's score is the
+  *second-best* partial, so a single band of noise or a lone line does not pass either.
+- A comb frame skips the density cap and counts as tonal.
+- With the comb, stacks join into runs longer than 4 s, which the old ceiling dropped whole. The ceiling is now 8 s and
+  the floor 0.15 s. The talia preset keeps 0.2322 / 4 s and no comb.
+
+Two earlier versions were superseded after unit tests caught them:
+- Mean over partials, trough above each partial only: band-limited 5–16 kHz noise passed.
+- Mean over partials, trough on both sides: a single 6–10 kHz noise band passed, as cage noise in the call band would.
+
+Their sweep numbers are not reported.
+
+**Calibration sweep** (`--sweep harmonic --strategies mean`, `?` counted as calls):
+
+| configuration | P | R | F1 | call-time R | chunk P | chunk R | night FA/min |
+|---|---|---|---|---|---|---|---|
+| no comb, floor 0.23, max 4 (2026-10-20 production) | 0.87 | 0.88 | 0.88 | 0.76 | 0.86 | 0.96 | 0 |
+| no comb, floor 0.15 | 0.82 | 0.94 | 0.88 | 0.79 | 0.82 | 0.97 | 0 |
+| comb 8 dB, floor 0.15, max 8 | 0.73 | 0.96 | 0.83 | 0.92 | 0.79 | 0.98 | 0 |
+| **comb 10 dB, floor 0.15, max 8 (chosen)** | 0.80 | 0.95 | 0.87 | 0.90 | 0.82 | 0.99 | 0 |
+| comb 12 dB, floor 0.15, max 8 | 0.81 | 0.95 | 0.88 | 0.88 | 0.81 | 0.97 | 0 |
+| comb 6 dB, floor 0.15, max 8 | 0.54 | 0.98 | 0.69 | 0.93 | 0.68 | 1.00 | 0.83 |
+
+10 dB was chosen over 12 dB for call-time recall and chunk recall at the same precision. Against the 2026-10-20
+detector, event precision is lower. It is accepted because it keeps the calls the user flagged as missing: call-time
+recall is up 14 points, and the loud stacks are kept.
+
+**Held-out (no longer an untouched set).** The set was first used on 2026-10-20. Here it was scored once for each of
+the two superseded versions and once for the final one. Final scores:
+
+| configuration | P | R | F1 | call-time R | chunk P | chunk R | night FA/min |
+|---|---|---|---|---|---|---|---|
+| 2026-10-20 production | 0.80 | 0.79 | 0.80 | 0.65 | 0.94 | 0.92 | 0 |
+| no comb, floor 0.15, max 8 | 0.79 | 0.91 | 0.84 | 0.71 | 0.94 | 0.99 | 0 |
+| **comb 10 dB, floor 0.15, max 8 (new production)** | 0.78 | 0.93 | 0.85 | 0.85 | 0.94 | 0.99 | 0 |
+| same, `c` only | 0.75 | 0.96 | 0.84 | 0.87 | 0.94 | 0.99 | 0 |
+
+Reproduce with `score_detectors.py score <clips> <labels> --audio <dir> --sweep harmonic --strategies mean`.
+
+**Still open:**
+- Precision has not improved. The false alarms are still broadband cage noise.
+- Short calls under 0.15 s are still dropped.
+- Training audio at 16 kHz removes most of the harmonic structure measured here.

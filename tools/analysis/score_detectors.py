@@ -114,7 +114,23 @@ def _tonal_sweep() -> List[Tuple[str, Overrides]]:
     return out
 
 
-SWEEPS = {"threshold": _threshold_sweep, "rate": _rate_sweep, "tonal": _tonal_sweep}
+def _harmonic_sweep() -> List[Tuple[str, Overrides]]:
+    """Harmonic-comb exemption x call floor x call ceiling (DETECTOR_EVAL finding 11),
+    on the production detector. ``harm-:floor0.2322:max4`` is the detector held-out-tested
+    on 2026-10-18."""
+    out: List[Tuple[str, Overrides]] = []
+    for floor, ceil in ((0.2322, 4.0), (0.15, 4.0), (0.15, 8.0), (0.1, 8.0)):
+        for h in (None, 4.0, 6.0, 8.0, 10.0, 12.0):
+            out.append((f"harm{'-' if h is None else f'{h:g}'}:floor{floor:g}:max{ceil:g}",
+                        {"frame_features": "spectral", "detection_sample_rate": 48_000,
+                         "spectral_max_freq_hz": 16_000.0, "min_tonal_fraction": 0.5,
+                         "min_call_duration_s": floor, "max_call_duration_s": ceil,
+                         "harmonic_min_contrast_db": h}))
+    return out
+
+
+SWEEPS = {"threshold": _threshold_sweep, "rate": _rate_sweep, "tonal": _tonal_sweep,
+          "harmonic": _harmonic_sweep}
 
 
 # --------------------------------------------------------------------------- #
