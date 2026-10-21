@@ -119,6 +119,7 @@ class FrameActivity:
     peak_db: Optional[np.ndarray] = None  # (T,) loudest in-band bin above its floor, dB
     peak_freq_hz: Optional[np.ndarray] = None  # (T,) frequency of that bin
     harmonic: Optional[np.ndarray] = None  # (T,) bool, harmonic-comb frame
+    call_prob: Optional[np.ndarray] = None  # (T,) learned detector's call probability
 
 
 def highpass_filter(
@@ -317,12 +318,42 @@ def _spectral_frame_activity(
     )
 
 
+def _learned_frame_activity(
+    audio: np.ndarray, sample_rate: int, cfg: PreprocessingConfig
+) -> FrameActivity:
+    """Frames the trained classifier scores at ``learned_threshold`` or above (``learned_detector``).
+
+    ``peak_db``, ``peak_freq_hz`` and ``tonal`` are filled from the band features, at 250 Hz
+    resolution, for the catalogue's per-call SNR / pitch / tonal-fraction columns only. The
+    detection decision uses none of them.
+    """
+    from marmoset_developmental_agent.preprocessing.learned_detector import (
+        band_edges, call_probability, learned_features, load_call_detector)
+
+    feats, times = learned_features(audio, sample_rate, cfg)
+    prob = call_probability(feats, load_call_detector(cfg.learned_model_path))
+    centres = (band_edges(cfg)[:-1] + band_edges(cfg)[1:]) / 2
+    peak = feats.max(axis=0)
+    width_hz = (feats > peak - cfg.tonal_peak_db).sum(axis=0) * cfg.learned_band_hz
+    return FrameActivity(
+        frame_times_s=times,
+        active=prob >= cfg.learned_threshold,
+        hop_s=cfg.learned_hop_length / sample_rate,
+        tonal=(peak > cfg.tonal_peak_db) & (width_hz < cfg.tonal_max_bandwidth_hz),
+        peak_db=peak,
+        peak_freq_hz=centres[feats.argmax(axis=0)],
+        call_prob=prob,
+    )
+
+
 def compute_frame_activity(
     audio: np.ndarray, sample_rate: int, cfg: PreprocessingConfig
 ) -> FrameActivity:
     """Classify each STFT frame as vocal or noise, via ``cfg.frame_features``."""
     if cfg.frame_features == "talia":
         return _talia_frame_activity(audio, sample_rate, cfg)
+    if cfg.frame_features == "learned":
+        return _learned_frame_activity(audio, sample_rate, cfg)
     return _spectral_frame_activity(audio, sample_rate, cfg)
 
 

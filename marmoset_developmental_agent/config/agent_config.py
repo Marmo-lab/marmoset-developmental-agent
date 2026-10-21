@@ -72,7 +72,7 @@ class PreprocessingConfig:
     #                 chunk P 0.94 / chunk R 0.92). The production default.
     #   "talia"    -- faithful port of segment_processor.py (freq_range / bandwidth), for
     #                 the GmSLM comparison arm and the port gate; use :meth:`talia`.
-    frame_features: Literal["talia", "spectral"] = "spectral"
+    frame_features: Literal["talia", "spectral", "learned"] = "spectral"
 
     # --- "talia" feature path (segment_processor.py, read from source) ------------ #
     amp_threshold: float = 0.02  # [talia] AMP_THRESHOLD on librosa |STFT|
@@ -141,6 +141,17 @@ class PreprocessingConfig:
     harmonic_f0_step_hz: float = 25.0  # [ours]
     harmonic_tol_bins: int = 2  # [ours]
 
+    # --- "learned" feature path (ours; preprocessing/learned_detector.py) -------- #
+    # A frame classifier trained on the hand labels (DETECTOR_EVAL finding 12). It runs on
+    # the detection signal high-passed at highpass_cutoff_hz, 1 kHz in :meth:`learned`.
+    # 1024 / 480 at 48 kHz = 21 ms window, 10 ms hop; 250 Hz bands up to Nyquist. These
+    # must match the checkpoint, which was trained with exactly these values.
+    learned_model_path: str = "models/call_detector_v1.pt"  # [ours] relative to the repo root
+    learned_threshold: float = 0.5  # [ours]
+    learned_n_fft: int = 1024  # [ours]
+    learned_hop_length: int = 480  # [ours]
+    learned_band_hz: float = 250.0  # [ours]
+
     # --- shared run grouping and duration limits -------------------------------- #
     # [talia] Gaps <= 4 frames between active frames are bridged into one call
     # (find_consecutive_series splits where diff > 4).
@@ -206,6 +217,17 @@ class PreprocessingConfig:
         return cls(frame_features="talia", detection_sample_rate=22_050, spectral_max_freq_hz=None,
                    detection_channel_strategy="mean", training_channel_strategy="mean",
                    min_call_duration_s=0.2322, max_call_duration_s=4.0, harmonic_min_contrast_db=None)
+
+    @classmethod
+    def learned(cls) -> "PreprocessingConfig":
+        """The learned call detector (DETECTOR_EVAL finding 12), with its post-processing.
+
+        High-pass at 1 kHz rather than 5 kHz, so the classifier sees cage noise's
+        low-frequency energy. The classifier decides what a call is, so the run grouping
+        only closes 50 ms gaps and drops runs under 50 ms. The 8 s ceiling is kept.
+        """
+        return cls(frame_features="learned", highpass_cutoff_hz=1_000.0, merge_gap_s=0.05,
+                   min_call_duration_s=0.05, harmonic_min_contrast_db=None)
 
     def hop_s(self) -> float:
         """Seconds per STFT frame at the detection rate."""

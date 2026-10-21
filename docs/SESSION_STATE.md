@@ -5,7 +5,7 @@ lands. Read this first on reconnect: it should be enough to resume without re-de
 anything. Long-lived decisions live in `OPEN_DECISIONS.md`; this file is "where are we
 right now".
 
-**Last updated:** 2026-10-21 (evening)
+**Last updated:** 2026-10-21 (night)
 
 ---
 
@@ -120,7 +120,31 @@ Already landed and verified on real cluster data:
 S4.1 says it does not). It is still correctly rejected, on rate (250 kHz) and channel
 count (1), not on the missing timestamp.
 
-### Latest (2026-10-21, evening; supersedes everything below where they conflict)
+### Latest (2026-10-21, night; supersedes everything below where they conflict)
+
+**User verdict on the harmonic rule detector:** better, but still not accurate and not matching the labels. Agreed plan:
+a detector learned from the labels.
+
+**Done (commit after 062efdd):** the learned detector, `PreprocessingConfig.learned()`, `config/learned.yaml`, and
+`config/corpus_day_learned.yaml`. Code in `preprocessing/learned_detector.py`; training and evaluation in
+`tools/analysis/train_call_detector.py` (`cv` / `fit` / `evaluate`). The checkpoint is `models/call_detector_v1.pt`
+(fit on all 45 clips).
+- 9-fold clip-grouped cross-validation, `c` labels: P 0.93, R 0.93, IoU≥.5 P/R 0.83 / 0.84, time P 0.88, chunk P 1.00.
+  The harmonic rule scores 0.78 / 0.97, 0.53 / 0.75, 0.70 and 0.86.
+- Splits fall from 12% to 4% of labels. Median onset error is 20 ms (was 37 ms). Both edges are within 50 ms for 47%
+  of labels (was 23%). 0 night detections. Details in DETECTOR_EVAL finding 12.
+- Visual comparison: `labeling/compare_learned/index.html`.
+- **Not yet the default.** Waiting for the user's look at the comparison page. Switching is one line
+  (`frame_features`) plus the preset's fields. The talia path and the port gate are untouched.
+- Streaming works: about 1.5 s per minute of audio on CPU.
+
+**Pending:**
+1. User verdict on `labeling/compare_learned`, then make `learned()` the production default.
+2. Training rate, 48 kHz or 32 kHz (see below). Still open.
+3. `v3_day` corpus run with `config/corpus_day_learned.yaml` plus the chosen rate.
+4. More labels (10-20 clips): an untouched test set, and more training data.
+
+### Earlier on 2026-10-21 (evening)
 
 **User verdicts on `labeling/listen_v2`:**
 - **The 10,875 Hz "device tone" is calls**, not a device. Do not filter it.

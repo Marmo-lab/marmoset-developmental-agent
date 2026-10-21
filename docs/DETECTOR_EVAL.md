@@ -201,3 +201,46 @@ Reproduce with `score_detectors.py score <clips> <labels> --audio <dir> --sweep 
 - Precision has not improved. The false alarms are still broadband cage noise.
 - Short calls under 0.15 s are still dropped.
 - Training audio at 16 kHz removes most of the harmonic structure measured here.
+
+## Finding 12: a detector learned from the labels (2026-10-21)
+**Why.** The user's verdict on the harmonic rule detector: better, but still not accurate and not matching the labels.
+Measured against all 527 labels, it matched 76% of `c` labels one-to-one. It split 12% into several detections and
+merged 9% with a neighbour, and 21% of its detections touched no label. Onsets were off by a median of 37 ms. Rules
+define a call acoustically (energy above a floor, short gaps bridged); the labels define it by ear. Tuning thresholds
+trades splits against merges, so the detector is now trained on the labels instead.
+
+**Detector** (`preprocessing/learned_detector.py`, `PreprocessingConfig.learned()`):
+- **Input:** the capsule mean high-passed at 1 kHz; STFT 1024 / 480 at 48 kHz (10 ms frames); 92 bands of 250 Hz
+  from 1 to 24 kHz, each in dB above its median.
+- **Model:** three 1D convolutions over time, then a BiGRU, then one logit per frame.
+- **Training targets:** `c` = 1, background = 0, `?` ignored.
+- **Calls:** frames with p ≥ 0.5, then the shared `activity_to_calls` (50 ms gap bridging, minimum 50 ms, maximum
+  8 s, no tonal rejection).
+
+**Evaluation.** 9-fold cross-validation grouped by clip, over all 45 clips (`train_call_detector.py cv`). Clips are
+dealt into folds by recording day, so each clip is scored by a model that never saw it. Results on the day clips:
+
+| detector (`c` labels; `?` ignored) | P | R | F1 | IoU≥.5 P | IoU≥.5 R | time P | time R | chunk P | chunk R | 1:1 | split | merged | missed | onset / offset error (median) | both edges ≤ 50 ms |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| rule, 2026-10-20 | 0.84 | 0.89 | 0.86 | 0.54 | 0.64 | 0.72 | 0.74 | 0.89 | 0.96 | 0.70 | 0.12 | 0.07 | 0.11 | 43 / 67 ms | 0.22 |
+| rule + harmonic, 2026-10-21 | 0.78 | 0.97 | 0.86 | 0.53 | 0.75 | 0.70 | 0.90 | 0.86 | 0.99 | 0.76 | 0.12 | 0.09 | 0.03 | 37 / 67 ms | 0.23 |
+| **learned** | **0.93** | 0.93 | **0.93** | **0.83** | **0.84** | **0.88** | 0.91 | **1.00** | 0.98 | **0.84** | **0.04** | 0.06 | 0.07 | **20 / 42 ms** | **0.47** |
+
+- With `?` counted as calls, the learned detector scores P 0.94, R 0.89, F1 0.91 and IoU≥.5 P/R 0.83 / 0.80.
+- All three detectors raise 0 detections on the 6 night clips.
+
+**What it changes.**
+- Boundaries now mostly agree with the labels: IoU≥.5 matches go from about 0.55 to 0.83, and splits fall from 12% to
+  4% of labels.
+- Time precision rises from 0.70 to 0.88: far less non-call audio is marked as call.
+- The harmonic rule detector still finds more labels (R 0.97 vs 0.93). The learned detector misses 7% of `c` labels
+  outright.
+
+**Caveats.**
+- There is no untouched test set left. These are cross-validated estimates on the same 45 clips that guided every
+  earlier choice.
+- 45 minutes of labels from one labeller.
+- A fresh labelled set is the next real test. It would also give the model more training data.
+
+The shipped checkpoint `models/call_detector_v1.pt` was fit on all 45 clips with the same recipe (`fit`, 1000 steps,
+seed 0). Reproduce with `train_call_detector.py cv` and `evaluate`; `outputs/compare_*.json` feed `review_labels.py`.

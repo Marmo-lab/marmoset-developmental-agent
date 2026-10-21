@@ -131,7 +131,10 @@ def main(argv: List[str] | None = None) -> int:
 
     # 1-2. Data + preprocessing -------------------------------------------------
     ds, info, phee = load_data(cfg, args.mock)
-    stage(2, "Preprocessing summary (5 kHz HPF, noise gate, 0.25-4 s calls, 10 s chunks @ 16 kHz, F(d) days)")
+    pre = cfg.preprocessing
+    stage(2, f"Preprocessing summary ({pre.frame_features} detector, {pre.highpass_cutoff_hz / 1000:g} kHz HPF, "
+             f"{pre.min_call_duration_s:g}-{pre.max_call_duration_s:g} s calls, {pre.chunk_duration_s:g} s chunks "
+             f"@ {pre.target_sample_rate / 1000:g} kHz, F(d) days)")
     summary = {**ds.summary(), **info}
     log.info("Dataset: %s", json.dumps(summary, default=str))
     starts = [c.start_time for c in ds.chunks]

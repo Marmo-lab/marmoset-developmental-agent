@@ -1,0 +1,10 @@
+# Corpus build with the learned call detector, day audio only (config/learned.yaml + corpus_day.yaml).
+#   tools/corpus/detect_corpus.py ... --config config/corpus_day_learned.yaml --export-audio
+
+preprocessing:
+  frame_features: learned
+  highpass_cutoff_hz: 1000.0
+  merge_gap_s: 0.05
+  min_call_duration_s: 0.05
+  harmonic_min_contrast_db: null
+  exclude_night: true

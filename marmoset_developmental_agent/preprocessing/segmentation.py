@@ -110,7 +110,11 @@ def _rejected_by_shape(members: np.ndarray, activity: FrameActivity, cfg: Prepro
       than that fraction of the frames from its first to its last member (gaps included)
       are tonal (see ``filter_5khz.py``). Calls are narrow lines; the false alarms this
       removes are broadband cage noise in the same band (docs/DETECTOR_EVAL.md finding 9).
+
+    The ``"learned"`` path has no shape rejection: the classifier was trained to reject.
     """
+    if cfg.frame_features == "learned":
+        return False  # the classifier already decided; its tonal flag is catalogue-only
     if activity.tonal is not None and cfg.min_tonal_fraction is not None:
         span = activity.tonal[members[0]:members[-1] + 1]
         if span.mean() < cfg.min_tonal_fraction:

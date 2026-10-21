@@ -1,0 +1,10 @@
+# The learned call detector (PreprocessingConfig.learned(); docs/DETECTOR_EVAL.md finding 12).
+# Overlay on the defaults:  python run_pipeline.py --config config/learned.yaml
+# Only the fields that differ from the production defaults are listed.
+
+preprocessing:
+  frame_features: learned          # classifier trained on the hand labels
+  highpass_cutoff_hz: 1000.0       # the classifier sees 1-24 kHz, so cage noise keeps its low end
+  merge_gap_s: 0.05                # the classifier decides what a call is; only close 50 ms gaps
+  min_call_duration_s: 0.05
+  harmonic_min_contrast_db: null   # rule-detector feature, unused here
