@@ -5,7 +5,7 @@ lands. Read this first on reconnect: it should be enough to resume without re-de
 anything. Long-lived decisions live in `OPEN_DECISIONS.md`; this file is "where are we
 right now".
 
-**Last updated:** 2026-10-21
+**Last updated:** 2026-10-21 (evening)
 
 ---
 
@@ -120,7 +120,46 @@ Already landed and verified on real cluster data:
 S4.1 says it does not). It is still correctly rejected, on rate (250 kHz) and channel
 count (1), not on the missing timestamp.
 
-### Next (as of 2026-10-20; supersedes the list below where they conflict)
+### Latest (2026-10-21, evening; supersedes everything below where they conflict)
+
+**User verdicts on `labeling/listen_v2`:**
+- **The 10,875 Hz "device tone" is calls**, not a device. Do not filter it.
+- The detections are not accurate: many calls are missed, and some non-calls are marked.
+- **No reason to stay faithful to GmSLM**: its preprocessing is not good. Deviate wherever the data says so.
+
+**Done 2026-10-21 (commit 0d44c45, pushed):**
+- Inventory of all 527 hand labels on the raw 48 kHz audio:
+  - The calls are harmonic. The lowest band has median 7.0 kHz, with the second band at 1.9-2.0x.
+  - In 29% of calls the lowest band is above 8 kHz, and 87% have energy above 8 kHz.
+  - The detector's 50 misses: 31 short faint notes, removed by the 0.2322 s floor, and 15 loud pulsed stacks, removed
+    by the 0.35 density cap.
+- **New production detector:**
+  - Harmonic-comb frames, scored on the second-best partial over 5-24 kHz, skip the density cap and count as tonal.
+  - Call limits are now 0.15-8 s.
+  - Held-out: R 0.79 -> 0.93, call-time R 0.65 -> 0.85, P 0.80 -> 0.78, chunk P 0.94, chunk R 0.92 -> 0.99, no night
+    false alarms. Details in DETECTOR_EVAL finding 11.
+  - The held-out set has now been scored several times and is no longer untouched; a fresh test set needs new labels.
+  - The Talia preset is identical field by field (checked locally). pytest 68 pass, ruff clean, mock 69 s.
+
+**Pending, in order:**
+1. **Port gate on the cluster** (`sbatch tools/cluster/verify_port.sbatch`, after `git pull` in the clone). It is
+   required for this change and was not run: the cluster was unreachable off the lab network. The Talia code path is
+   untouched, so 23/23 is expected.
+2. **Decision: training sample rate.** 16 kHz training audio removes the fundamental of 29% of calls and the
+   harmonics of nearly all. The user has said GmSLM is not binding. Options:
+   - 48 kHz, which keeps everything.
+   - 32 kHz, which keeps the fundamentals (up to ~11.5 kHz) and part of the harmonics.
+
+   Either way, `target_sample_rate` already flows through `read_chunks`, `chunk_recording` and `merge_corpus`. The
+   encoders hard-code 16 kHz (`BaseAudioEncoder.sample_rate`, conv stride 320 = 20 ms). At 48 kHz a 20 ms frame needs
+   total stride 960, for example a first conv of (30, 15). A pretrained 16 kHz HuBERT then cannot be used, so the
+   encoder is trained from scratch on our corpus, and the vocoder must change rate too. Not changed yet: this changes
+   the model, not only preprocessing.
+3. **Re-run the corpus as `RUN=v3_day`** with the new detector, at the rate chosen in step 2. Run it once, not twice.
+   `v2_day` stays as is: do not delete it without approval.
+4. Precision is unchanged: broadband cage noise is still the main false alarm. Calls under 0.15 s are still dropped.
+
+### Next (as of 2026-10-20)
 
 Done 2026-10-20: held-out set labelled (15 clips, 208 labels, `data/labels/heldout_labels.csv`) and scored once.
 The pre-registered choice is **spectral @12 dB, 48 kHz with a 16 kHz ceiling, floor 0.23, tonal >= 0.5**. Held-out:
