@@ -14,9 +14,13 @@ A sidecar ``clips.csv`` maps every clip back to its source file, offset, wall-cl
 and applied gain, so labels can be converted to absolute sample indices in the raw
 recordings.
 
-For a held-out test set, ``--exclude`` takes an earlier ``clips.csv``: its source
-recordings are skipped and its dates are treated as already used, so the new clips come
-from recordings (and, where possible, days) the detector was never calibrated on.
+For a held-out test set, ``--exclude`` takes one or more earlier ``clips.csv``: their
+source recordings are skipped and their dates are treated as already used, so the new
+clips come from recordings (and, where possible, days) the detector never saw.
+
+Duplicate copies of a recording on the shared drive (same file name and start time, e.g.
+``Rec_2021_07_14-17`` copying ``Rec_2021_07_08-13``) are drawn at most once: the first
+copy in manifest order is kept.
 
 Usage (on the cluster):
     python tools/labels/make_clips.py $WORK_DIR/manifests/recordings.csv \
@@ -24,6 +28,9 @@ Usage (on the cluster):
     python tools/labels/make_clips.py $WORK_DIR/manifests/recordings.csv \
         -o $WORK_DIR/labeling_heldout --day 15 --night 0 --seed 20261020 \
         --exclude $WORK_DIR/labeling/clips.csv --prefix ho
+    python tools/labels/make_clips.py $WORK_DIR/manifests/recordings.csv \
+        -o $WORK_DIR/labeling_test --day 15 --night 0 --seed 20261022 \
+        --exclude $WORK_DIR/labeling/clips.csv $WORK_DIR/labeling_heldout/clips.csv --prefix ts
 """
 
 from __future__ import annotations
@@ -55,14 +62,22 @@ def main() -> None:
     ap.add_argument("--day", type=int, default=24)
     ap.add_argument("--night", type=int, default=6)
     ap.add_argument("--seed", type=int, default=20261015)
-    ap.add_argument("--exclude", help="earlier clips.csv: skip its recordings, prefer other dates")
+    ap.add_argument("--exclude", nargs="*", default=[],
+                    help="earlier clips.csv files: skip their recordings, prefer other dates")
     ap.add_argument("--prefix", default="clip", help="clip id prefix, e.g. ho for a held-out set")
     a = ap.parse_args()
 
-    prior = list(csv.DictReader(open(a.exclude))) if a.exclude else []
+    prior = [r for path in a.exclude for r in csv.DictReader(open(path))]
     skip = {r["source_path"] for r in prior}
+    skip_keys = {(Path(r["source_path"]).name, None) for r in prior}  # a prior file's other copies too
     prior_dates = {dt.datetime.fromisoformat(r["wall_time"]).date() for r in prior}
-    rows = [r for r in csv.DictReader(open(a.manifest)) if r["path"] not in skip]
+    rows, seen = [], set()
+    for r in csv.DictReader(open(a.manifest)):
+        key = (Path(r["path"]).name, r["start_time"])
+        if r["path"] in skip or key in seen or (key[0], None) in skip_keys:
+            continue
+        seen.add(key)
+        rows.append(r)
     rng = random.Random(a.seed)
     picked = []
     for want, day in ((a.day, True), (a.night, False)):

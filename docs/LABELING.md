@@ -48,7 +48,7 @@ fine and probably better.
 |---|---|
 | A clear call | label `c` |
 | You think it might be a call but aren't sure | label `?` |
-| A sequence of syllables with gaps **shorter than ~0.1 s** (e.g. a twitter) | **one** label over the whole sequence |
+| A sequence of syllables with gaps **shorter than ~0.15 s** (e.g. a twitter) | **one** label over the whole sequence |
 | Syllables separated by **longer** gaps | separate labels |
 | Two animals calling at once, overlapping | one label covering both, `c` |
 | A call cut off by the start or end of the clip | label it anyway |
@@ -56,7 +56,11 @@ fine and probably better.
 | The whole clip has no calls at all | one label `none` anywhere, then export |
 | Something visible in the spectrogram that you can't hear as a call | don't label it: the labeller's ear decides (anything unlabelled counts as noise) |
 
-- Boundaries within about **50 ms** are fine; don't fuss over the exact edge.
+- Put each edge where the call **visibly starts and ends** in the spectrogram; zoom in on the edge if needed. Since
+  2026-10-22 the pipeline outputs individual calls with exact times, so edges matter. Within about 20-30 ms is
+  plenty. (The first 45 clips were labelled to ~50 ms; that is fine.)
+- The 0.15 s rule is measured on your first 45 clips: gaps inside your labels were at most 0.21 s (median 0.03 s),
+  and gaps between labels at least 0.16 s for 95% of them (median 0.59 s).
 - **Label every call in the clip.** A missed call counts against the detector as much
   as a false one, so an unlabelled call makes the scores wrong.
 - Please label **without** looking at any detector output, so the labels measure the
