@@ -253,6 +253,7 @@ def test_merge_calls_builds_one_chronological_call_corpus(wav, tmp_path):
     assert [r["start_time"] for r in rows] == sorted(r["start_time"] for r in rows)
     assert rows[0]["recording_id"] == "Rec_C_001" and rows[0]["call_id"] == "Rec_C_001_00000"
     assert {r["quality"] for r in rows} == {"ok"}  # rule detector: no confidence, never flagged
+    assert len(list(csv.DictReader(open(out / "calls_train.tsv"), delimiter="\t"))) == len(rows)
     for r in rows[:3]:
         x = read_call(out, r)
         assert len(x) == pytest.approx(float(r["duration_s"]) * cfg.call_audio_sample_rate, abs=2)

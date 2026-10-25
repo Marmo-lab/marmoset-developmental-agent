@@ -10,6 +10,11 @@ This step builds, in place and without copying audio:
     ``call_id`` is ``<recording_id>_<index>``. The audio is ``audio_path`` from
     ``audio_offset_s`` for ``audio_duration_s`` seconds; the call itself starts
     ``audio_lead_s`` into that slice and lasts ``duration_s`` (:func:`read_call`).
+``calls_train.tsv``
+    The same rows without the calls flagged ``short_low_conf``: the training corpus.
+    The user chose this rule on 2026-10-25, after a pilot listening check: 96.4% of the
+    pilot's calls and 99.3% of its call time kept, cross-validated P 0.930 -> 0.934, R
+    0.933 -> 0.918.
 ``calls_summary.json``
     Totals, calls and call-hours per recording date, and the duplicate copies dropped.
 
@@ -70,10 +75,11 @@ def merge(out: Path) -> Dict[str, object]:
             rows.append({"call_id": f"{rid}_{k:05d}", "recording_id": rid, "audio_path": f"call_audio/{rid}.flac",
                          "quality": quality(r), "_order": order, **{f: r[f] for f in FIELDS if f in r}})
     rows.sort(key=lambda r: (r["start_time"], r["_order"]))
-    with open(out / "calls.tsv", "w", newline="") as fh:
-        w = csv.DictWriter(fh, FIELDS, delimiter="\t", extrasaction="ignore")
-        w.writeheader()
-        w.writerows(rows)
+    for name, keep in (("calls.tsv", rows), ("calls_train.tsv", [r for r in rows if r["quality"] == "ok"])):
+        with open(out / name, "w", newline="") as fh:
+            w = csv.DictWriter(fh, FIELDS, delimiter="\t", extrasaction="ignore")
+            w.writeheader()
+            w.writerows(keep)
     per_date: Dict[str, List[float]] = defaultdict(lambda: [0, 0.0])
     for r in rows:
         d = per_date[r["start_time"][:10]]
@@ -82,6 +88,7 @@ def merge(out: Path) -> Dict[str, object]:
     summary = {
         "n_calls": len(rows), "call_hours": round(sum(v[1] for v in per_date.values()), 2),
         "n_short_low_conf": sum(r["quality"] == "short_low_conf" for r in rows),
+        "train_call_hours": round(sum(float(r["duration_s"]) for r in rows if r["quality"] == "ok") / 3600, 2),
         "n_recordings": len(rids), "duplicates_dropped": dropped,
         "first": rows[0]["start_time"] if rows else None, "last": rows[-1]["start_time"] if rows else None,
         "per_date": {d: {"calls": v[0], "call_hours": round(v[1], 3)} for d, v in sorted(per_date.items())},
