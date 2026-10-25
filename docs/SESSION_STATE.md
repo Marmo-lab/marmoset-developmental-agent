@@ -5,7 +5,7 @@ lands. Read this first on reconnect: it should be enough to resume without re-de
 anything. Long-lived decisions live in `OPEN_DECISIONS.md`; this file is "where are we
 right now".
 
-**Last updated:** 2026-10-21 (night)
+**Last updated:** 2026-10-25
 
 ---
 
@@ -120,7 +120,41 @@ Already landed and verified on real cluster data:
 S4.1 says it does not). It is still correctly rejected, on rate (250 kHz) and channel
 count (1), not on the missing timestamp.
 
-### Latest (2026-10-21, night; supersedes everything below where they conflict)
+### Latest (2026-10-25; supersedes everything below where they conflict)
+
+**Decisions (user, 2026-10-22):**
+- **Product:** individual clean calls with exact wall-clock times, to build "sentences" later (possibly with
+  generated silence between calls). 10 s chunks are dropped.
+- **Unit:** the call (a sequence of notes). Overlapping calls may count as one.
+- **Denoising:** later, after detection is exact.
+- **Rate:** store call audio at the native 48 kHz; choose the model's rate later (32 kHz looks like the balance).
+- **More labels:** the user will label the 15-clip blind test set.
+
+**Done:**
+- **Blind test set** `labeling/test` (`ts_01`-`ts_15`, job 64092720). 15 day clips, May 6 - Oct 5, from recordings
+  outside both earlier sets, plus raw 4-capsule `audio48/`. `LABELING.md` now says: 0.15 s joins notes into one call,
+  and edges go at the visible start and end. **Waiting for the user's labels** in `labeling/test/labels/ts_XX.txt`.
+  Import with:
+  `import_audacity.py labeling/test/clips.csv labeling/test/labels -o data/labels/test_labels.csv`
+- **Call catalogue** (a6ea6b6): `detect_corpus.py --export-calls` writes `call_audio/<rid>.flac` (48 kHz, 24-bit, all
+  calls back to back with 50 ms margins). `calls.csv` gains `confidence`, `notes`, `audio_offset_s`,
+  `audio_duration_s` and `audio_lead_s`. Checked end to end on ho_06: 29 calls.
+- **Finding 13:** onset / offset heads do not sharpen boundaries, so v1 stays the shipped model.
+- **Label-gap analysis:** gaps inside a call are at most 0.21 s (median 0.03 s). Gaps between calls are ≥ 0.16 s for
+  95% of them (median 0.59 s).
+- **marmosetcare.stir.ac.uk:** ~13 call types plus compounds and infant cries. Several are low-pitched and noisy (ek,
+  cough, chatter, cry), so never high-pass at 5 kHz again. Several are very quiet (chirp, see): likely the
+  low-SNR misses.
+
+**Next:**
+1. Score v1 on the test set: boundaries to the visible edges, splits / merges, per SNR. Then retrain on all 60 clips.
+2. Make `learned()` the production default.
+3. Run `v4_day` with `config/corpus_day_learned.yaml --export-calls` (about 2-3 h on the cluster).
+4. Cluster the corpus calls by shape into a type atlas for the user to name. Use it for per-type recall and to sample
+   targeted labels.
+5. Build "sentences" from the catalogue.
+
+### Earlier (2026-10-21, night)
 
 **User verdict on the harmonic rule detector:** better, but still not accurate and not matching the labels. Agreed plan:
 a detector learned from the labels.
