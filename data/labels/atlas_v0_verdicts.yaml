@@ -1,0 +1,22 @@
+# User's listening verdicts on labeling/atlas_v0 (2026-10-25): note-shape clusters of the 461 `c` labels in the
+# 45 old clips (t-SNE + HDBSCAN on zoomed note spectrograms). Types are tentative; the user is not yet expert.
+K8: {verdict: junk, note: "too-short fragments, not calls (note-splitting artefact; v1 drops notes < 60 ms)"}
+K7: {verdict: call, guess: chirp, note: "most examples cut too short"}
+K3: {verdict: one type, guess: tsik}
+K6: {verdict: one type, guess: unknown}
+K5: {verdict: possibly mixed, note: "snippets too short to judge"}
+K2: {verdict: one type, guess: unknown}
+K4: {verdict: one type, guess: unknown}
+K1:
+  verdict: mostly one type
+  guess: infant cry
+  exceptions:
+    - {example: "clip_26 @5.8 or @14.8 (both clip_26 examples)", guess: "rapid-fire tsik / mobbing"}
+    - {example: "ho_14 @41.7", guess: "rapid-fire tsik / mobbing"}
+    - {example: "clip_13 @51.8", verdict: junk}
+K0:
+  verdict: one type
+  guess: phee
+  exceptions:
+    - {example: "clip_24 @13.0", note: "different from the rest (pitch oscillates: trill?)"}
+    - {example: "clip_28 @21.3", note: "different from the rest"}
