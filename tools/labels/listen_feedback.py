@@ -4,7 +4,7 @@ Every example on the page (an element with class ``ex`` that holds an ``<audio>`
 buttons — call / not a call / wrong edges / unsure — and a free-text note. Choices are kept
 in the browser (``localStorage``, keyed by the page's path, so reopening the page keeps
 them), and a bar at the bottom shows progress and saves everything as
-``feedback_<page>.json``. The download is the hand-off: Claude reads it from ``~/Downloads``.
+``feedback_<folder>_<page>.json`` (``feedback_<folder>.json`` for an ``index.html``). The download is the hand-off: Claude reads it from ``~/Downloads``.
 
 The item id is the audio file's name, so a verdict can be traced back to the call it
 belongs to (the pages name audio files after call ids or cluster examples).
@@ -35,7 +35,7 @@ body{padding-bottom:56px}
 <script>
 (function(){
   const KEY = "fb:" + location.pathname;
-  const page = location.pathname.split("/").slice(-2, -1)[0] || "page";
+  const page = location.pathname.split("/").slice(-2).join("_").replace(/\.html$/, "").replace(/_index$/, "") || "page";
   let st = {};
   try { st = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) {}
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} count(); };
