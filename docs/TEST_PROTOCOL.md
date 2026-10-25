@@ -39,3 +39,16 @@ All are computed against the user's `c` labels, with `?` ignored:
 - The test labels may then join the training data (a v2 model), but **v2 cannot be evaluated on them.** Any later
   claim about v2 needs new, untouched clips.
 - The scores and this protocol go into `DETECTOR_EVAL.md` as the test-set result.
+
+## Addendum, 2026-10-25 (before any test scoring)
+
+The user's listening check of the pilot corpus led to a quality flag, `merge_calls.quality`: `short_low_conf` marks
+a call shorter than 0.18 s with detector confidence below 0.6. It came from pilot audio, not from the test clips. At
+this point the test labels are partly made (ts_01-ts_07), and no detector has run on the test clips.
+
+The test is scored twice, and both results are reported:
+1. the frozen detector as above (primary);
+2. the same detections without those flagged `short_low_conf`.
+
+Clip ts_07 contains a dense series that the user labelled as fewer, longer calls. Its scores are also reported on
+their own.
