@@ -262,3 +262,30 @@ def test_merge_calls_builds_one_chronological_call_corpus(wav, tmp_path):
     process(RecordingFile(str(wav), START, "Rec_D_001"), plain, cfg, export_audio=False)
     with pytest.raises(SystemExit, match="export-calls"):
         merge(plain)
+
+
+def test_clean_corpus_writes_an_aligned_cleaned_copy_of_the_call_audio(wav, tmp_path):
+    """tools/corpus/clean_corpus: the cleaned pack has the original pack's length, so the
+    catalogue indexes both, and each cleaned call keeps the call and drops the margin noise."""
+    import csv
+
+    from marmoset_developmental_agent.config.agent_config import CleaningConfig
+    from tools.corpus.clean_corpus import clean_recording, select
+    from tools.corpus.detect_corpus import process
+
+    cfg = PreprocessingConfig()
+    process(RecordingFile(str(wav), START, "R_210601_001"), tmp_path, cfg, export_audio=False, export_calls=True)
+    assert select(tmp_path, one_per_date=True) == ["R_210601_001"]
+    s = clean_recording(tmp_path, "R_210601_001", cfg, CleaningConfig())
+    assert s["n_calls"] == len(CALLS) and (tmp_path / "clean" / "R_210601_001.json").exists()
+    orig, sr = sf.read(tmp_path / "call_audio" / "R_210601_001.flac", dtype="float32")
+    clean, _ = sf.read(tmp_path / "call_audio_clean" / "R_210601_001.flac", dtype="float32")
+    assert len(clean) == len(orig)
+    for r in csv.DictReader(open(tmp_path / "calls" / "R_210601_001.csv")):
+        off, lead, d = float(r["audio_offset_s"]), float(r["audio_lead_s"]), float(r["duration_s"])
+        head = slice(int(off * sr), int((off + lead - 0.02) * sr))  # margin before the call: noise only
+        body = slice(int((off + lead + 0.05) * sr), int((off + lead + d - 0.05) * sr))
+        assert np.abs(clean[head]).max() < 0.1 * np.abs(orig[head]).max()
+        # the call's energy is kept (the synthetic call is 30 dB above the noise); levels, not
+        # samples, are compared because the catalogue's 0.1 ms rounding may shift a slice by a few samples
+        assert 0.8 < np.std(clean[body]) / np.std(orig[body]) < 1.2

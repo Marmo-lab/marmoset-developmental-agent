@@ -22,7 +22,7 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Type, TypeVar, Union, get_args, get_origin, get_type_hints
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, TypeVar, Union, get_args, get_origin, get_type_hints
 
 import yaml
 
@@ -259,6 +259,52 @@ class PreprocessingConfig:
     def to_frames(self, seconds: float) -> int:
         """Convert a duration in seconds to a frame count at the detection rate."""
         return int(round(seconds / self.hop_s()))
+
+
+@dataclass
+class CleaningConfig:
+    """Spectral cleaning of each detected call (preprocessing/clean_calls.py) [ours, 2026-10-25].
+
+    The user chose spectral cleaning over harmonic re-synthesis after a listening demo
+    (re-synthesis fails on broadband calls: infant cries, chatter). Values are the demo's
+    "v2", set by hand on 8 labelled calls and not yet tuned against a metric:
+
+    * Noise profile: per frequency bin, the median power over the frames within
+      ``context_s`` of the call that lie outside every detected call by ``guard_s``,
+      times ``median_to_mean`` (mean / median of an exponential power distribution is
+      1 / ln 2). With fewer than ``min_noise_s`` of such frames, the context widens to
+      ``wide_context_s``.
+    * Clicks (cage noise): a frame is a click if more than ``click_min_fraction`` of the
+      bins in ``click_band_hz`` stand ``click_bin_db`` above the noise, and that fraction
+      exceeds its median over ``click_context_frames`` by ``click_min_jump``; clicks are
+      dilated by one frame. In a click frame every bin is capped at the median of the
+      non-click frames within ``click_fill_frames`` on each side, so a call line keeps its
+      level and the vertical spike goes.
+    * Gain per time-frequency cell: ``max(1 - over_subtraction * N / P, gain_floor)``,
+      median-filtered over ``gain_median`` (bins x frames), then averaged over
+      ``gain_smooth_frames`` frames. Outside the call the signal fades to zero over
+      ``fade_s``. Phase is kept.
+    """
+
+    n_fft: int = 1024  # 21 ms at 48 kHz
+    hop_length: int = 240  # 5 ms
+    highpass_hz: float = 1_000.0  # as the learned detector
+    context_s: float = 3.0
+    wide_context_s: float = 10.0
+    guard_s: float = 0.1
+    min_noise_s: float = 0.5
+    median_to_mean: float = 1.4
+    click_band_hz: Tuple[float, float] = (2_000.0, 16_000.0)
+    click_bin_db: float = 8.0
+    click_min_fraction: float = 0.2
+    click_min_jump: float = 0.12
+    click_context_frames: int = 17  # +-40 ms
+    click_fill_frames: int = 10  # +-50 ms
+    over_subtraction: float = 3.0
+    gain_floor: float = 0.01  # -40 dB
+    gain_median: Tuple[int, int] = (3, 5)
+    gain_smooth_frames: int = 3
+    fade_s: float = 0.01
 
 
 @dataclass
@@ -503,6 +549,7 @@ class AgentConfig:
     data: DataConfig = field(default_factory=DataConfig)
     preprocessing: PreprocessingConfig = field(default_factory=PreprocessingConfig)
     exposure: ExposureScheduleConfig = field(default_factory=ExposureScheduleConfig)
+    cleaning: CleaningConfig = field(default_factory=CleaningConfig)
     encoder: EncoderConfig = field(default_factory=EncoderConfig)
     decoder: DecoderConfig = field(default_factory=DecoderConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
@@ -573,6 +620,8 @@ def _from_dict(cls: Type[T], data: Dict[str, Any], base: Optional[T] = None) -> 
             ftype = next(a for a in get_args(ftype) if a is not type(None))
         if dataclasses.is_dataclass(ftype) and isinstance(value, dict):
             value = _from_dict(ftype, value, getattr(obj, key))
+        elif get_origin(ftype) is tuple and isinstance(value, list):  # YAML has no tuples
+            value = tuple(value)
         setattr(obj, key, value)
     return obj
 
