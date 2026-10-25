@@ -18,7 +18,7 @@ the block, as the spectral detector does, so the input is invariant to recorder 
 to the filter's shape.
 
 Model [ours]. Three 1D convolutions over time (bands as channels, kernel 5, the last
-dilated, about 0.13 s receptive field), then a bidirectional GRU for context, then one logit
+dilated: a receptive field of 17 frames, 0.17 s), then a bidirectional GRU for context, then one logit
 per frame. The loss is masked binary cross-entropy: ``c`` labels are 1, background is 0,
 and ``?`` labels and frames outside the labelled minute are ignored. Frames with
 ``p >= learned_threshold`` are active. Grouping into calls and the duration limits are the
