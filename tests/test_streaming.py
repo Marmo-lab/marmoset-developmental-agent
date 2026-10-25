@@ -220,6 +220,15 @@ def test_merge_builds_a_chronological_manifest_and_drops_duplicate_copies(wav, t
     assert ds.chunks[0].audio().shape == (160_000,) and ds.chunks[0].calls
 
 
+def test_call_quality_flags_only_short_low_confidence_calls():
+    from tools.corpus.merge_calls import quality
+
+    assert quality({"duration_s": "0.12", "confidence": "0.50"}) == "short_low_conf"
+    assert quality({"duration_s": "0.12", "confidence": "0.90"}) == "ok"
+    assert quality({"duration_s": "0.40", "confidence": "0.50"}) == "ok"
+    assert quality({"duration_s": "0.12", "confidence": "nan"}) == "ok"
+
+
 def test_merge_calls_builds_one_chronological_call_corpus(wav, tmp_path):
     """tools/corpus/merge_calls: per-recording catalogues + FLACs -> one calls.tsv in wall-clock
     order, duplicate copies kept once, and read_call returns exactly each catalogued call."""
@@ -243,6 +252,7 @@ def test_merge_calls_builds_one_chronological_call_corpus(wav, tmp_path):
     rows = list(csv.DictReader(open(out / "calls.tsv"), delimiter="\t"))
     assert [r["start_time"] for r in rows] == sorted(r["start_time"] for r in rows)
     assert rows[0]["recording_id"] == "Rec_C_001" and rows[0]["call_id"] == "Rec_C_001_00000"
+    assert {r["quality"] for r in rows} == {"ok"}  # rule detector: no confidence, never flagged
     for r in rows[:3]:
         x = read_call(out, r)
         assert len(x) == pytest.approx(float(r["duration_s"]) * cfg.call_audio_sample_rate, abs=2)

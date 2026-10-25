@@ -13,6 +13,14 @@ This step builds, in place and without copying audio:
 ``calls_summary.json``
     Totals, calls and call-hours per recording date, and the duplicate copies dropped.
 
+Each call gets a ``quality`` flag. ``short_low_conf`` marks a call shorter than
+``SHORT_S`` whose detector confidence is under ``LOW_CONF`` [ours, 2026-10-25]. In the user's
+listening check of the pilot, 17 of the 20 short or low-confidence calls were "not a call",
+against 0 of 20 random calls. On the labelled clips the same rule removes 12 of 470
+cross-validated detections and lowers recall from 0.933 to 0.918, so some of these are faint
+real calls. They are therefore flagged, not deleted: 3.6% of the pilot's calls, 0.7% of its
+call time. Training excludes them by default.
+
 Duplicate copies on the shared drive are kept once, by ``merge_corpus.deduplicate``: same
 file name and start time is one recording, and the copy with the most calls wins.
 
@@ -38,7 +46,15 @@ import soundfile as sf
 from tools.corpus.merge_corpus import deduplicate
 
 FIELDS = ["call_id", "recording_id", "start_time", "duration_s", "start_s", "end_s", "snr_db", "peak_freq_hz",
-          "confidence", "notes", "audio_path", "audio_offset_s", "audio_duration_s", "audio_lead_s"]
+          "confidence", "quality", "notes", "audio_path", "audio_offset_s", "audio_duration_s", "audio_lead_s"]
+SHORT_S = 0.18  # [ours] all 17 "not a call" verdicts were 0.11-0.17 s
+LOW_CONF = 0.6  # [ours] ... with confidence 0.48-0.55
+
+
+def quality(row: Dict[str, str]) -> str:
+    """``short_low_conf`` or ``ok``; a missing confidence (rule detectors) is never low."""
+    conf = float(row["confidence"]) if row.get("confidence") not in (None, "", "nan") else float("nan")
+    return "short_low_conf" if float(row["duration_s"]) < SHORT_S and conf < LOW_CONF else "ok"
 
 
 def merge(out: Path) -> Dict[str, object]:
@@ -52,7 +68,7 @@ def merge(out: Path) -> Dict[str, object]:
             raise SystemExit(f"{rid}: no call audio; run detect_corpus.py with --export-calls")
         for k, r in enumerate(catalogue):
             rows.append({"call_id": f"{rid}_{k:05d}", "recording_id": rid, "audio_path": f"call_audio/{rid}.flac",
-                         "_order": order, **{f: r[f] for f in FIELDS if f in r}})
+                         "quality": quality(r), "_order": order, **{f: r[f] for f in FIELDS if f in r}})
     rows.sort(key=lambda r: (r["start_time"], r["_order"]))
     with open(out / "calls.tsv", "w", newline="") as fh:
         w = csv.DictWriter(fh, FIELDS, delimiter="\t", extrasaction="ignore")
@@ -65,6 +81,7 @@ def merge(out: Path) -> Dict[str, object]:
         d[1] += float(r["duration_s"]) / 3600
     summary = {
         "n_calls": len(rows), "call_hours": round(sum(v[1] for v in per_date.values()), 2),
+        "n_short_low_conf": sum(r["quality"] == "short_low_conf" for r in rows),
         "n_recordings": len(rids), "duplicates_dropped": dropped,
         "first": rows[0]["start_time"] if rows else None, "last": rows[-1]["start_time"] if rows else None,
         "per_date": {d: {"calls": v[0], "call_hours": round(v[1], 3)} for d, v in sorted(per_date.items())},
@@ -90,7 +107,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("out", help="a detect_corpus.py run directory")
     s = merge(Path(ap.parse_args().out))
-    print(f"{s['n_calls']} calls, {s['call_hours']} h, {s['n_recordings']} recordings, "
+    print(f"{s['n_calls']} calls ({s['n_short_low_conf']} flagged short_low_conf), {s['call_hours']} h, {s['n_recordings']} recordings, "
           f"{len(s['duplicates_dropped'])} duplicate copies dropped; {s['first']} .. {s['last']}")
 
 
