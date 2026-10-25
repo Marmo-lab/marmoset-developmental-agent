@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ספריית הקריאות</title>
+<style>
+/* Layout: a filter bar over a list of call cards; each card puts original and cleaned side by side. */
+:root{
+  --bg:#f3f5f4; --card:#ffffff; --ink:#1d282c; --muted:#5d6b70; --rule:#d9e0de; --accent:#0b7a75; --accent-soft:#e1f0ee;
+  --ok:#2e7d32; --bad:#c62828; --warn:#b85c00; --edge:#6a4fb3;
+  --font:"Assistant","Arial Hebrew",Arial,sans-serif; --mono:ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#121819;--card:#1a2224;--ink:#e2eae8;--muted:#9aaeb0;--rule:#2b3739;--accent:#4fc1b8;--accent-soft:#163030;
+        --ok:#7cc47f;--bad:#ef7b7b;--warn:#f0a95c;--edge:#b3a1ee;color-scheme:dark}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.5}
+header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--rule);padding:10px max(16px,2vw);display:flex;flex-direction:column;gap:8px}
+h1{margin:0;font-size:1.25rem}
+.sum{color:var(--muted);font-size:.9rem}
+.filters{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:end}
+.filters label{display:flex;flex-direction:column;font-size:.75rem;color:var(--muted);gap:2px}
+.filters input,.filters select{font:inherit;font-size:.9rem;padding:3px 6px;border:1px solid var(--rule);border-radius:5px;background:var(--bg);color:var(--ink)}
+.filters input[type=number]{width:5.5rem}
+button{font:inherit;cursor:pointer;border:1px solid var(--rule);background:var(--bg);color:var(--ink);border-radius:5px;padding:4px 10px}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.pager{display:flex;gap:8px;align-items:center;font-size:.9rem}
+main{padding:14px max(16px,2vw);display:flex;flex-direction:column;gap:14px;max-width:1200px;margin:0 auto}
+.call{background:var(--card);border:1px solid var(--rule);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.meta{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.meta b{color:var(--ink);font-weight:600}
+.badge{font-size:.72rem;padding:1px 7px;border-radius:9px;background:var(--accent-soft);color:var(--ink)}
+.badge.flag{background:var(--bad);color:#fff}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.side{display:flex;flex-direction:column;gap:4px}
+.side span{font-size:.78rem;color:var(--muted);letter-spacing:.03em}
+.side img{width:100%;aspect-ratio:2.2/1;object-fit:fill;border-radius:4px;background:var(--bg)}
+.side audio{width:100%;height:32px}
+.verdicts{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.verdicts button{font-size:.82rem;padding:3px 9px}
+.verdicts button.on[data-v=good]{background:var(--ok);color:#fff;border-color:var(--ok)}
+.verdicts button.on[data-v=damaged]{background:var(--warn);color:#fff;border-color:var(--warn)}
+.verdicts button.on[data-v=noise]{background:var(--bad);color:#fff;border-color:var(--bad)}
+.verdicts button.on[data-v=edges]{background:var(--edge);color:#fff;border-color:var(--edge)}
+.verdicts button.on[data-v=unsure]{background:var(--muted);color:#fff;border-color:var(--muted)}
+.verdicts input{flex:1;min-width:12rem;font:inherit;font-size:.85rem;padding:3px 6px;border:1px solid var(--rule);border-radius:5px;background:var(--bg);color:var(--ink)}
+.saved{font-size:.75rem;color:var(--ok)}
+.empty{color:var(--muted);padding:30px;text-align:center}
+code{font-family:var(--mono);font-size:.8em;direction:ltr;unicode-bidi:isolate}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width:700px){.pair{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div style="display:flex;gap:14px;align-items:baseline;flex-wrap:wrap">
+    <h1>ספריית הקריאות</h1><span class="sum" id="sum">טוען…</span>
+  </div>
+  <form class="filters" id="f">
+    <label>תאריך<select id="date"><option value="">הכל</option></select></label>
+    <label>שעה<select id="hour"><option value="">הכל</option></select></label>
+    <label>אורך מינ׳ (שנ׳)<input type="number" id="min_dur" step="0.05" min="0"></label>
+    <label>אורך מקס׳ (שנ׳)<input type="number" id="max_dur" step="0.05" min="0"></label>
+    <label>ביטחון מינ׳<input type="number" id="min_conf" step="0.05" min="0" max="1"></label>
+    <label>SNR מינ׳ (dB)<input type="number" id="min_snr" step="1"></label>
+    <label>איכות<select id="quality"><option value="">הכל</option><option value="ok">ok</option><option value="short_low_conf">short_low_conf</option></select></label>
+    <label>המשוב שלי<select id="verdict"><option value="">הכל</option><option value="none">עוד לא סימנתי</option><option value="good">✓ טוב</option><option value="damaged">⚠ הניקוי פגע</option><option value="noise">✗ לא קריאה</option><option value="edges">↔ גבולות</option><option value="unsure">? לא בטוח</option></select></label>
+    <label>מיון<select id="sort"><option value="time">לפי זמן</option><option value="random">אקראי</option><option value="snr_db">SNR</option><option value="confidence">ביטחון</option><option value="duration_s">אורך</option></select></label>
+    <label>סדר<select id="desc"><option value="1">יורד</option><option value="0">עולה</option></select></label>
+    <button class="primary" type="submit">הצג</button>
+    <button type="button" id="reshuffle" title="ערבוב חדש במיון אקראי">ערבב</button>
+  </form>
+  <div class="pager"><button id="prev" type="button">→ הקודם</button><span id="pageinfo"></span><button id="next" type="button">הבא ←</button></div>
+</header>
+<main id="list"><div class="empty">טוען קריאות…</div></main>
+<script>
+const T = new URLSearchParams(location.search).get("t") || "";
+const api = (p, q = {}) => `${p}?${new URLSearchParams({...q, t: T})}`;
+const $ = id => document.getElementById(id);
+let page = 0, seed = 1, total = 0, size = 30;
+const VERDICTS = [["good","✓ קריאה, הניקוי טוב"],["damaged","⚠ הניקוי פגע בקריאה"],["noise","✗ לא קריאה"],["edges","↔ גבולות לא נכונים"],["unsure","? לא בטוח"]];
+const fmt = (x, d = 2) => x == null ? "—" : Number(x).toFixed(d);
+
+async function meta(){
+  const m = await (await fetch(api("api/meta"))).json();
+  $("sum").textContent = `${m.n_calls.toLocaleString()} קריאות · ${m.n_cleaned.toLocaleString()} מנוקות · ${m.dates.length} תאריכים`;
+  for (const d of m.dates) $("date").insertAdjacentHTML("beforeend", `<option value="${d.date}">${d.date} (${d.n})</option>`);
+  for (let h = 5; h <= 19; h++) $("hour").insertAdjacentHTML("beforeend", `<option value="${h}">${String(h).padStart(2,"0")}:00</option>`);
+}
+function query(){
+  const q = {page, size, sort: $("sort").value, desc: $("desc").value, seed};
+  for (const k of ["date","hour","min_dur","max_dur","min_conf","min_snr","quality","verdict"]) if ($(k).value !== "") q[k] = $(k).value;
+  return q;
+}
+async function load(){
+  $("list").innerHTML = `<div class="empty">טוען…</div>`;
+  const r = await (await fetch(api("api/calls", query()))).json();
+  total = r.total;
+  const pages = Math.max(1, Math.ceil(total / size));
+  $("pageinfo").textContent = `עמוד ${page + 1} מתוך ${pages} · ${total.toLocaleString()} קריאות מתאימות`;
+  $("prev").disabled = page === 0; $("next").disabled = page + 1 >= pages;
+  if (!r.rows.length){ $("list").innerHTML = `<div class="empty">אין קריאות שמתאימות לסינון. נסה להרחיב את הטווחים.</div>`; return; }
+  $("list").innerHTML = "";
+  for (const c of r.rows) $("list").appendChild(card(c));
+}
+function card(c){
+  const el = document.createElement("article"); el.className = "call";
+  const side = (v, label) => c.cleaned || v === "orig"
+    ? `<div class="side"><span>${label}</span><img loading="lazy" alt="ספקטרוגרמה ${label}" src="${api(`api/spec/${c.call_id}`, {v})}"><audio controls preload="none" src="${api(`api/audio/${c.call_id}`, {v})}"></audio></div>`
+    : `<div class="side"><span>${label}</span><div class="empty">ההקלטה הזו עוד לא נוקתה</div></div>`;
+  el.innerHTML = `
+    <div class="meta"><b>${c.start_time.replace("T"," ").slice(0,23)}</b><span>אורך <b>${fmt(c.duration_s)}</b> שנ׳</span>
+      <span>ביטחון <b>${fmt(c.confidence)}</b></span><span>SNR <b>${fmt(c.snr_db,0)}</b> dB</span><span>גובה <b>${fmt((c.peak_freq_hz||0)/1000,1)}</b> kHz</span>
+      ${c.quality !== "ok" ? `<span class="badge flag">${c.quality}</span>` : ""}<span class="badge"><code>${c.call_id}</code></span></div>
+    <div class="pair">${side("orig","מקור")}${side("clean","נקי")}</div>
+    <div class="verdicts">${VERDICTS.map(([v,t]) => `<button type="button" data-v="${v}">${t}</button>`).join("")}
+      <input placeholder="הערה (לא חובה)" value="${(c.feedback && c.feedback.note) ? c.feedback.note.replace(/"/g,"&quot;") : ""}"><span class="saved"></span></div>`;
+  let cur = c.feedback ? c.feedback.verdict : null;
+  const btns = el.querySelectorAll(".verdicts button"), note = el.querySelector(".verdicts input"), saved = el.querySelector(".saved");
+  const paint = () => btns.forEach(b => b.classList.toggle("on", b.dataset.v === cur));
+  const save = async () => {
+    const res = await fetch(api("api/feedback"), {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({call_id: c.call_id, verdict: cur, note: note.value})});
+    saved.textContent = res.ok ? "נשמר" : "השמירה נכשלה: בדוק שהשרת עדיין רץ";
+    setTimeout(() => saved.textContent = "", 1500);
+  };
+  btns.forEach(b => b.onclick = () => { cur = cur === b.dataset.v ? null : b.dataset.v; paint(); save(); });
+  note.onchange = save;
+  paint();
+  return el;
+}
+$("f").onsubmit = e => { e.preventDefault(); page = 0; load(); };
+$("reshuffle").onclick = () => { seed++; $("sort").value = "random"; page = 0; load(); };
+$("prev").onclick = () => { if (page > 0){ page--; load(); scrollTo(0,0);} };
+$("next").onclick = () => { page++; load(); scrollTo(0,0); };
+meta().then(load).catch(() => { $("list").innerHTML = `<div class="empty">אין גישה לשרת. פתח את הכתובת שהשרת הדפיס, עם <code>?t=…</code>.</div>`; });
+</script>
+</body>
+</html>
