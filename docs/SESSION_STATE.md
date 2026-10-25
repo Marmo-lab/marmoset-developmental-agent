@@ -5,7 +5,7 @@ lands. Read this first on reconnect: it should be enough to resume without re-de
 anything. Long-lived decisions live in `OPEN_DECISIONS.md`; this file is "where are we
 right now".
 
-**Last updated:** 2026-10-25
+**Last updated:** 2026-10-26
 
 ---
 
@@ -120,7 +120,26 @@ Already landed and verified on real cluster data:
 S4.1 says it does not). It is still correctly rejected, on rate (250 kHz) and channel
 count (1), not on the missing timestamp.
 
-### Latest (2026-10-25; supersedes everything below where they conflict)
+### Latest (2026-10-26; supersedes everything below where they conflict)
+
+**Corpus `v3_calls` is complete** (job 64257082; learned detector v1, `config/corpus_day_learned.yaml --export-calls`).
+- Coverage: 2719/2719 recordings, 0 errors. 1114 recordings lie entirely at night and were skipped unread. All 136
+  tasks COMPLETED; the longest took 49 min.
+- After `merge_calls` (117 duplicate copies dropped, 2602 recordings): **1,687,292 calls, 360.2 call-hours**, from
+  2021-05-03 to 2021-10-12, over 135 dates. Call-hours per date: median 2.57, max 5.07.
+- **Training corpus `calls_train.tsv`:** 1,624,228 calls, **357.8 call-hours**. It drops the 63,064 calls flagged
+  `short_low_conf`.
+- Location: `~/marmoset_work/corpus/v3_calls/`: `calls.tsv`, `calls_train.tsv`, `calls_summary.json`,
+  `call_audio/<rid>.flac` (48 kHz, 24-bit). Read a call with `merge_calls.read_call`.
+- **Cleaning:** `clean_corpus.py --one-per-date` (job 64728860), then the listening page `listen_clean.py` (job
+  64728876, after it). Output in `call_audio_clean/` and `~/marmoset_work/listen_clean`.
+- **Cluster access from off campus:** `elsc-login-indirect` (ProxyJump hurcs-proxy) with ControlMaster sockets in
+  `~/.ssh/sockets` (added 2026-10-26). The user authenticates once with 2FA, then `ssh -o BatchMode=yes
+  elsc-login-indirect` works for up to 8 h.
+- **Lesson:** a background waiter must tell "no connection" apart from "job finished". On 2026-10-25 one treated a
+  dropped connection as finished and skipped its steps. Chain cluster steps with `--dependency` instead.
+
+### Earlier (2026-10-25)
 
 **Decisions (user, 2026-10-22):**
 - **Product:** individual clean calls with exact wall-clock times, to build "sentences" later (possibly with
