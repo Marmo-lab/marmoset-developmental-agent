@@ -218,3 +218,36 @@ def test_merge_builds_a_chronological_manifest_and_drops_duplicate_copies(wav, t
     assert [c.start_time for c in ds.chunks] == sorted(c.start_time for c in ds.chunks)
     assert ds.chunks[0].recording_id == "Rec_C_001"
     assert ds.chunks[0].audio().shape == (160_000,) and ds.chunks[0].calls
+
+
+def test_merge_calls_builds_one_chronological_call_corpus(wav, tmp_path):
+    """tools/corpus/merge_calls: per-recording catalogues + FLACs -> one calls.tsv in wall-clock
+    order, duplicate copies kept once, and read_call returns exactly each catalogued call."""
+    import csv
+    import shutil
+
+    from tools.corpus.detect_corpus import process
+    from tools.corpus.merge_calls import merge, read_call
+
+    copy = tmp_path / "Rec_B" / wav.name
+    copy.parent.mkdir()
+    shutil.copy(wav, copy)
+    out = tmp_path / "run"
+    cfg = PreprocessingConfig()
+    for path, start, rid in [(wav, START + dt.timedelta(hours=1), "Rec_A_001"),
+                             (copy, START + dt.timedelta(hours=1), "Rec_B_001"),
+                             (wav, START, "Rec_C_001")]:
+        process(RecordingFile(str(path), start, rid), out, cfg, export_audio=False, export_calls=True)
+    s = merge(out)
+    assert s["duplicates_dropped"] == ["Rec_B_001"] and s["n_recordings"] == 2 and s["n_calls"] == 2 * len(CALLS)
+    rows = list(csv.DictReader(open(out / "calls.tsv"), delimiter="\t"))
+    assert [r["start_time"] for r in rows] == sorted(r["start_time"] for r in rows)
+    assert rows[0]["recording_id"] == "Rec_C_001" and rows[0]["call_id"] == "Rec_C_001_00000"
+    for r in rows[:3]:
+        x = read_call(out, r)
+        assert len(x) == pytest.approx(float(r["duration_s"]) * cfg.call_audio_sample_rate, abs=2)
+        assert len(read_call(out, r, with_margin=True)) > len(x)
+    plain = tmp_path / "plain"
+    process(RecordingFile(str(wav), START, "Rec_D_001"), plain, cfg, export_audio=False)
+    with pytest.raises(SystemExit, match="export-calls"):
+        merge(plain)
