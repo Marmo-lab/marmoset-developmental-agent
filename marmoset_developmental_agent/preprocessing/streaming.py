@@ -114,6 +114,10 @@ class CallRecord:
       dominant frequency over the tonal frames. A fixed device tone (the door beep,
       DETECTOR_EVAL finding 10) has an IQR of about one STFT bin and sits at the same
       frequency every time, so it shows up as a spike in the corpus-wide histogram.
+    * ``confidence``: the learned detector's mean call probability over the call (NaN for
+      the rule detectors).
+    * ``notes``: the notes inside the call, ``"start-end;..."`` in seconds from
+      ``start_s`` (``note_min_db`` / ``note_gap_s``); empty on the ``"talia"`` path.
     """
 
     start_s: float
@@ -123,6 +127,8 @@ class CallRecord:
     tonal_fraction: float
     peak_freq_hz: float
     peak_freq_iqr_hz: float
+    confidence: float = math.nan
+    notes: str = ""
 
     @property
     def duration_s(self) -> float:
@@ -160,19 +166,41 @@ def detection_activity(audio: np.ndarray, sample_rate: int, cfg: PreprocessingCo
     return compute_frame_activity(x, cfg.detection_sample_rate, cfg)
 
 
-def _features(activity: FrameActivity, call: CallSegment, cfg: PreprocessingConfig) -> List[float]:
-    """``[snr_db, tonal_fraction, peak_freq_hz, peak_freq_iqr_hz]`` over the call's unpadded frames."""
+def _notes(activity: FrameActivity, call: CallSegment, cfg: PreprocessingConfig) -> str:
+    """Notes inside a call as ``"start-end;..."``, seconds from the call's (padded) start."""
+    if activity.peak_db is None:
+        return ""
+    t = activity.frame_times_s
+    sel = np.flatnonzero((t >= call.start_s) & (t <= call.end_s) & (activity.peak_db > cfg.note_min_db))
+    if not sel.size:
+        return ""
+    runs = np.split(sel, np.flatnonzero(np.diff(sel) * activity.hop_s > cfg.note_gap_s) + 1)
+    runs = [r for r in runs if len(r) * activity.hop_s >= cfg.note_gap_s]  # a lone frame is not a note
+    half = activity.hop_s / 2
+    return ";".join(f"{max(0.0, t[r[0]] - half - call.start_s):.3f}-{t[r[-1]] + half - call.start_s:.3f}"
+                    for r in runs)
+
+
+def _features(activity: FrameActivity, call: CallSegment, cfg: PreprocessingConfig) -> List[object]:
+    """``[snr_db, tonal_fraction, peak_freq_hz, peak_freq_iqr_hz, confidence, notes]`` over
+    the call's unpadded frames (notes over its padded span)."""
+    t, tol = activity.frame_times_s, activity.hop_s / 2
+    conf = math.nan
+    if activity.call_prob is not None:
+        inside = (t >= call.start_s - tol) & (t <= call.end_s + tol)
+        conf = float(activity.call_prob[inside].mean()) if inside.any() else math.nan
+    notes = _notes(activity, call, cfg)
     if activity.peak_db is None or activity.tonal is None or activity.peak_freq_hz is None:
-        return [math.nan] * 4
+        return [math.nan] * 4 + [conf, notes]
     t, tol = activity.frame_times_s, activity.hop_s / 2
     lo = call.start_s + cfg.boundary_pad_s if call.start_s > 0 else 0.0
     sel = (t >= lo - tol) & (t <= call.end_s - cfg.boundary_pad_s + tol)
     if not sel.any():
-        return [math.nan] * 4
+        return [math.nan] * 4 + [conf, notes]
     tonal = activity.tonal[sel]
     freqs = activity.peak_freq_hz[sel][tonal] if tonal.any() else activity.peak_freq_hz[sel]
     q1, med, q3 = np.percentile(freqs, [25, 50, 75])
-    return [float(np.median(activity.peak_db[sel])), float(tonal.mean()), float(med), float(q3 - q1)]
+    return [float(np.median(activity.peak_db[sel])), float(tonal.mean()), float(med), float(q3 - q1), conf, notes]
 
 
 def _merge_overlapping(found: List[CallRecord]) -> List[CallRecord]:
@@ -187,7 +215,8 @@ def _merge_overlapping(found: List[CallRecord]) -> List[CallRecord]:
             prev = out[-1]
             keep = r if r.snr_db > prev.snr_db else prev
             out[-1] = CallRecord(prev.start_s, max(prev.end_s, r.end_s), prev.start_time, keep.snr_db,
-                                 keep.tonal_fraction, keep.peak_freq_hz, keep.peak_freq_iqr_hz)
+                                 keep.tonal_fraction, keep.peak_freq_hz, keep.peak_freq_iqr_hz,
+                                 keep.confidence, keep.notes)
         else:
             out.append(r)
     return out
@@ -221,6 +250,26 @@ def detect_recording(src: AudioSource, start_time: dt.datetime, cfg: Preprocessi
     if cfg.exclude_night:
         calls = [r for r in calls if not in_night_window(r.start_time, cfg)]
     return calls
+
+
+def read_call_audio(src: AudioSource, records: Sequence[CallRecord], cfg: PreprocessingConfig) -> List[np.ndarray]:
+    """Each call's audio: the training channel at ``call_audio_sample_rate``, from
+    ``start_s - call_audio_margin_s`` to ``end_s + call_audio_margin_s`` (clipped to the file).
+
+    Unlike :func:`read_chunks` nothing is padded or gated: a call's audio starts
+    ``min(margin, start_s)`` before its catalogued start.
+    """
+    if cfg.training_channel_strategy == "per_channel":
+        raise ValueError("training_channel_strategy 'per_channel' does not give one training signal")
+    sr = src.sample_rate
+    channel = best_channel(src, cfg.training_channel_strategy)
+    out: List[np.ndarray] = []
+    for r in records:
+        a = max(0, int(round((r.start_s - cfg.call_audio_margin_s) * sr)))
+        b = min(src.frames, int(round((r.end_s + cfg.call_audio_margin_s) * sr)))
+        x = _signals(src.read(a, b - a), cfg.training_channel_strategy, sr, channel)[0]
+        out.append(resample_audio(x, sr, cfg.call_audio_sample_rate))
+    return out
 
 
 def read_chunks(

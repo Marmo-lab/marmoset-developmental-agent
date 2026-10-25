@@ -244,3 +244,24 @@ dealt into folds by recording day, so each clip is scored by a model that never 
 
 The shipped checkpoint `models/call_detector_v1.pt` was fit on all 45 clips with the same recipe (`fit`, 1000 steps,
 seed 0). Reproduce with `train_call_detector.py cv` and `evaluate`; `outputs/compare_*.json` feed `review_labels.py`.
+
+## Finding 13: onset / offset heads do not sharpen boundaries (2026-10-25)
+**Setup.** Two heads were added to the learned detector, "a call starts here" and "a call ends here", with Gaussian
+targets of sd 20 ms on the labelled edges. Post-processing used them to split runs (an offset peak followed by an
+onset peak within 0.3 s, both ≥ 0.5) and to move each edge to its head's peak within ±60 ms. Evaluation was 9-fold
+cross-validation, same folds as finding 12 (`train_call_detector.py cv --heads 3`).
+
+**Results** (`c` labels):
+
+| variant | IoU≥.5 P / R | split | merged | onset / offset error (median) | both edges ≤ 50 ms |
+|---|---|---|---|---|---|
+| v1, call head only (finding 12) | 0.83 / 0.84 | 0.04 | 0.06 | 20 / 42 ms | **0.47** |
+| 3-head model, call head only | 0.81 / 0.84 | 0.05 | 0.05 | 19 / 47 ms | 0.45 |
+| + split | 0.81 / 0.85 | 0.05 | 0.04 | 19 / 47 ms | 0.45 |
+| + split + edge refinement | 0.80 / 0.85 | 0.05 | 0.04 | 24 / 52 ms | 0.39 |
+
+**Verdict.**
+- Edge refinement makes boundaries worse, and splitting removes only 1% of merges.
+- v1 stays the shipped model. The code path is used only by a model with three heads.
+- The old labels were made to about ±50 ms, so boundary differences smaller than that cannot be measured on them.
+  The blind test set (`labeling/test`, labelled to the visible edges) is the place to measure boundaries next.

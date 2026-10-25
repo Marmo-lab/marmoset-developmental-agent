@@ -57,6 +57,8 @@ SETS = (("labeling/clips.csv", "data/labels/handlabels.csv", "labeling/clip_audi
         ("labeling/heldout/clips.csv", "data/labels/heldout_labels.csv", "labeling/heldout/audio48"))
 CLIP_S = 60.0
 CROP = 400  # frames, 4 s at 10 ms
+EDGE_SIGMA_FRAMES = 2.0  # onset / offset targets: Gaussian bumps of sd 20 ms on the labelled edges
+EDGE_POS_WEIGHT = 9.0  # edge frames are rare; weight loss terms by 1 + 9 * target
 
 Clip = Dict[str, np.ndarray]
 
@@ -75,17 +77,29 @@ def load_clips(cfg: PreprocessingConfig) -> Dict[str, Clip]:
             x = highpass_filter(x, sr, cfg.highpass_cutoff_hz, cfg.highpass_order)
             feats, t = learned_features(x, sr, cfg)
             t = t - lead
-            y = np.where((t >= 0) & (t <= CLIP_S), 0, -1).astype(np.int8)
+            inside = (t >= 0) & (t <= CLIP_S)
+            y = np.where(inside, 0, -1).astype(np.float32)
+            on = np.where(inside, 0, -1).astype(np.float32)
+            off = on.copy()
+            hop = t[1] - t[0]
             for lab, a, b in labels.get(c["clip_id"], []):
                 y[(t >= a) & (t <= b)] = 1 if lab == "c" else -1
-            out[c["clip_id"]] = {"x": normalise(feats), "y": y, "t": t, "day": np.int64(c["day"]), "lead": np.float64(lead)}
+                for edge, tgt in ((a, on), (b, off)):
+                    near = np.abs(t - edge) <= 4 * EDGE_SIGMA_FRAMES * hop
+                    if lab == "c":
+                        bump = np.exp(-0.5 * ((t[near] - edge) / (EDGE_SIGMA_FRAMES * hop)) ** 2)
+                        tgt[near] = np.where(tgt[near] >= 0, np.maximum(tgt[near], bump), tgt[near])
+                    else:
+                        tgt[near] = -1  # a ? label's edges are neither edges nor non-edges
+            out[c["clip_id"]] = {"x": normalise(feats), "y": np.stack([y, on, off]), "t": t,
+                                 "day": np.int64(c["day"]), "lead": np.float64(lead)}
     return out
 
 
-def train(clips: Dict[str, Clip], ids: List[str], steps: int, seed: int) -> CallNet:
+def train(clips: Dict[str, Clip], ids: List[str], steps: int, seed: int, n_out: int = 3) -> CallNet:
     rng = np.random.default_rng(seed)
     torch.manual_seed(seed)
-    net = CallNet(next(iter(clips.values()))["x"].shape[0])
+    net = CallNet(next(iter(clips.values()))["x"].shape[0], n_out=n_out)
     opt = torch.optim.AdamW(net.parameters(), 2e-3, weight_decay=1e-3)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, 2e-3, total_steps=steps)
     net.train()
@@ -98,10 +112,13 @@ def train(clips: Dict[str, Clip], ids: List[str], steps: int, seed: int) -> Call
             if rng.random() < 0.5:
                 x += (rng.normal(0, 0.1) * np.linspace(-1, 1, x.shape[0]))[:, None].astype(np.float32)
             xs.append(x)
-            ys.append(c["y"][s:s + CROP])
-        x, y = torch.from_numpy(np.stack(xs)), torch.from_numpy(np.stack(ys).astype(np.float32))
+            ys.append(c["y"][:n_out, s:s + CROP])
+        x, y = torch.from_numpy(np.stack(xs)), torch.from_numpy(np.stack(ys))  # y (B, n_out, T)
         m = (y >= 0).float()
-        loss = (nn.functional.binary_cross_entropy_with_logits(net(x), y.clamp(min=0), reduction="none") * m).sum() / m.sum()
+        w = m.clone()
+        w[:, 1:] *= 1 + EDGE_POS_WEIGHT * y[:, 1:].clamp(min=0)
+        bce = nn.functional.binary_cross_entropy_with_logits(net(x), y.clamp(min=0), reduction="none")
+        loss = sum((bce[:, k] * w[:, k]).sum() / w[:, k].sum() for k in range(n_out))
         opt.zero_grad()
         loss.backward()
         opt.step()
@@ -115,22 +132,26 @@ def predict(net: CallNet, clip: Clip) -> np.ndarray:
 
 
 def to_calls(prob: np.ndarray, clip: Clip, cfg: PreprocessingConfig) -> List[Tuple[float, float]]:
-    """Production post-processing: threshold, then the shared ``activity_to_calls``. Clip time."""
-    act = FrameActivity(frame_times_s=clip["t"] + clip["lead"], active=prob >= cfg.learned_threshold,
-                        hop_s=cfg.learned_hop_length / cfg.detection_sample_rate)
+    """Production post-processing on ``(n_out, T)`` probabilities: threshold, then the shared
+    ``activity_to_calls`` (which uses the edge heads when present). Clip time."""
+    prob = np.atleast_2d(prob)
+    act = FrameActivity(frame_times_s=clip["t"] + clip["lead"], active=prob[0] >= cfg.learned_threshold,
+                        hop_s=cfg.learned_hop_length / cfg.detection_sample_rate,
+                        onset_prob=prob[1] if len(prob) == 3 else None,
+                        offset_prob=prob[2] if len(prob) == 3 else None)
     lead = float(clip["lead"])
     return [(max(0.0, c.start_s - lead), min(CLIP_S, c.end_s - lead))
             for c in activity_to_calls(act, cfg) if c.end_s - lead > 0 and c.start_s - lead < CLIP_S]
 
 
-def cv(cfg: PreprocessingConfig, out: Path, folds: int, steps: int) -> None:
+def cv(cfg: PreprocessingConfig, out: Path, folds: int, steps: int, n_out: int = 3) -> None:
     clips = load_clips(cfg)
     ids = sorted(clips, key=lambda c: (int(clips[c]["day"]), c))
     groups = [ids[i::folds] for i in range(folds)]
     probs: Dict[str, np.ndarray] = {}
     t0 = time.time()
     for k, test in enumerate(groups):
-        net = train(clips, [c for c in ids if c not in test], steps, seed=k)
+        net = train(clips, [c for c in ids if c not in test], steps, seed=k, n_out=n_out)
         for c in test:
             probs[c] = predict(net, clips[c])
         print(f"fold {k + 1}/{folds} ({len(test)} clips) done, {time.time() - t0:.0f} s", flush=True)
@@ -143,9 +164,9 @@ def cv(cfg: PreprocessingConfig, out: Path, folds: int, steps: int) -> None:
     print(f"wrote {out}/oof_probs.npz and learned_detections.json")
 
 
-def fit(cfg: PreprocessingConfig, out: Path, steps: int) -> None:
+def fit(cfg: PreprocessingConfig, out: Path, steps: int, n_out: int = 3) -> None:
     clips = load_clips(cfg)
-    net = train(clips, sorted(clips), steps, seed=0)
+    net = train(clips, sorted(clips), steps, seed=0, n_out=n_out)
     out.parent.mkdir(parents=True, exist_ok=True)
     save_call_detector(net, out)
     print(f"wrote {out}")
@@ -221,9 +242,11 @@ def main() -> None:
     c.add_argument("--out", required=True)
     c.add_argument("--folds", type=int, default=9)
     c.add_argument("--steps", type=int, default=1000)
+    c.add_argument("--heads", type=int, choices=(1, 3), default=3, help="1 = call only (v1); 3 = call + onset + offset")
     f = sub.add_parser("fit")
     f.add_argument("--out", required=True)
     f.add_argument("--steps", type=int, default=1000)
+    f.add_argument("--heads", type=int, choices=(1, 3), default=3)
     e = sub.add_parser("evaluate")
     e.add_argument("learned_json")
     e.add_argument("--rules", nargs="+", required=True)
@@ -234,9 +257,9 @@ def main() -> None:
     torch.set_num_threads(4)
     cfg = PreprocessingConfig.learned()
     if a.cmd == "cv":
-        cv(cfg, Path(a.out), a.folds, a.steps)
+        cv(cfg, Path(a.out), a.folds, a.steps, a.heads)
     else:
-        fit(cfg, Path(a.out), a.steps)
+        fit(cfg, Path(a.out), a.steps, a.heads)
 
 
 if __name__ == "__main__":

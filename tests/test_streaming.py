@@ -164,6 +164,33 @@ def test_corpus_run_writes_the_catalogue_and_scores_labelled_minutes(wav, tmp_pa
     assert res["day_c+?"]["P"] == res["day_c+?"]["R"] == 1.0
 
 
+def test_export_calls_packs_each_call_at_48k_where_the_catalogue_says(wav, tmp_path):
+    """--export-calls: one FLAC per recording at 48 kHz; the catalogue's audio_offset_s /
+    audio_duration_s / audio_lead_s locate each call, with the configured margin around it,
+    and the notes column lists the call's notes in seconds from its start."""
+    import csv
+
+    from tools.corpus.detect_corpus import process
+
+    cfg = PreprocessingConfig()
+    s = process(RecordingFile(str(wav), START, "R_210601_001"), tmp_path, cfg, export_audio=False, export_calls=True)
+    rows = list(csv.DictReader(open(tmp_path / "calls" / "R_210601_001.csv")))
+    pack, sr = sf.read(tmp_path / "call_audio" / "R_210601_001.flac", dtype="float32")
+    assert sr == cfg.call_audio_sample_rate == 48_000 and len(rows) == s["n_calls"] == len(CALLS)
+    raw, _ = sf.read(wav, dtype="float32", always_2d=True)
+    for r, (onset, _) in zip(rows, CALLS):
+        assert abs(float(r["start_s"]) - onset) < 0.05
+        off, n, lead = float(r["audio_offset_s"]), float(r["audio_duration_s"]), float(r["audio_lead_s"])
+        assert n == pytest.approx(float(r["duration_s"]) + 2 * cfg.call_audio_margin_s, abs=1e-3)
+        assert lead == pytest.approx(cfg.call_audio_margin_s)
+        seg = pack[int(round(off * sr)):int(round((off + n) * sr))]
+        # the synthetic sweep is louder than the noise: the packed audio holds the call
+        mid = int(round((lead + float(r["duration_s"]) / 2) * sr))
+        assert np.abs(seg[mid - 480:mid + 480]).max() > 10 * np.abs(raw[:4800]).std()
+        notes = [tuple(map(float, x.split("-"))) for x in r["notes"].split(";")]
+        assert notes and 0 <= notes[0][0] < notes[-1][1] <= float(r["duration_s"]) + 1e-3
+
+
 def test_merge_builds_a_chronological_manifest_and_drops_duplicate_copies(wav, tmp_path):
     """tools/corpus/merge_corpus: per-recording chunk lists -> one manifest the agent loads.
 

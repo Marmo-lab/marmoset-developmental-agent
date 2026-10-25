@@ -48,12 +48,31 @@ def test_features_are_gain_invariant_and_on_a_10_ms_grid(cfg: PreprocessingConfi
     assert np.allclose(np.diff(t), 0.01)
 
 
-def test_model_gives_one_probability_per_frame(cfg: PreprocessingConfig) -> None:
+def test_model_gives_one_probability_per_frame_and_head(cfg: PreprocessingConfig) -> None:
     feats, t = learned_features(_clip(), SR, cfg)
     net = load_call_detector(cfg.learned_model_path)
     with torch.no_grad():
-        out = net(torch.from_numpy(feats)[None])
-    assert out.shape == (1, len(t))
+        assert net(torch.from_numpy(feats)[None]).shape == (1, 1, len(t))
+        assert CallNet(feats.shape[0], n_out=3).eval()(torch.from_numpy(feats)[None]).shape == (1, 3, len(t))
+
+
+def test_edge_heads_split_two_calls_and_move_edges_to_the_peaks(cfg: PreprocessingConfig) -> None:
+    """With onset / offset probabilities, one run of active frames that holds an offset peak
+    followed by an onset peak becomes two calls, and each edge moves to its head's peak."""
+    from marmoset_developmental_agent.preprocessing.filter_5khz import FrameActivity
+
+    n = 300
+    t = np.arange(n) * 0.01
+    active = np.zeros(n, bool)
+    active[50:200] = True  # one run, 1.5 s
+    on, off = np.zeros(n), np.zeros(n)
+    on[[47, 130]] = 0.9  # true starts: 3 frames before the run, and mid-run
+    off[[110, 203]] = 0.9  # an end mid-run, and 3 frames after the run
+    act = FrameActivity(frame_times_s=t, active=active, hop_s=0.01, onset_prob=on, offset_prob=off)
+    calls = activity_to_calls(act, dataclasses.replace(cfg, boundary_pad_s=0.0))
+    assert [(round(c.start_s, 2), round(c.end_s, 2)) for c in calls] == [(0.47, 1.10), (1.30, 2.03)]
+    unsplit = activity_to_calls(act, dataclasses.replace(cfg, boundary_pad_s=0.0, learned_split_prob=None))
+    assert [(round(c.start_s, 2), round(c.end_s, 2)) for c in unsplit] == [(0.47, 2.03)]
 
 
 def test_learned_path_runs_through_the_shared_pipeline(cfg: PreprocessingConfig) -> None:

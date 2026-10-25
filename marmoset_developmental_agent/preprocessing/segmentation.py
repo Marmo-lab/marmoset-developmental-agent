@@ -92,6 +92,53 @@ def _active_runs(activity: FrameActivity, cfg: PreprocessingConfig) -> List[np.n
     return [g for g in groups if len(g) >= cfg.min_run_members]
 
 
+def _split_and_refine(groups: List[np.ndarray], activity: FrameActivity, cfg: PreprocessingConfig) -> List[np.ndarray]:
+    """Use a learned model's onset / offset heads on each candidate (``learned_*`` fields).
+
+    * **Split** [ours]: where an offset peak and, within ``learned_split_max_gap_s`` after
+      it, an onset peak both reach ``learned_split_prob``, the candidate is two calls that
+      the call head ran together.
+    * **Refine** [ours]: each piece's first / last frame moves to the strongest onset /
+      offset frame within ``learned_edge_search_s``, if that frame reaches
+      ``learned_edge_min_prob``.
+
+    Pieces are returned as contiguous frame ranges: after refinement the edge frames need
+    not be members of the original run.
+    """
+    on, off = activity.onset_prob, activity.offset_prob
+    assert on is not None and off is not None
+    n = len(on)
+    w = _frames(cfg.learned_edge_search_s, activity)
+    gap = _frames(cfg.learned_split_max_gap_s, activity)
+    out: List[np.ndarray] = []
+    for g in groups:
+        pieces, start = [], int(g[0])
+        if cfg.learned_split_prob is not None:
+            i = start
+            while i < g[-1]:
+                if off[i] >= cfg.learned_split_prob and off[i] == off[max(start, i - w):i + w + 1].max():
+                    j_hi = min(int(g[-1]), i + gap)
+                    later = np.arange(i + 1, j_hi + 1)
+                    hits = later[on[later] >= cfg.learned_split_prob] if later.size else later
+                    if hits.size:
+                        j = int(hits[np.argmax(on[hits])])
+                        pieces.append((start, i))
+                        start, i = j, j
+                        continue
+                i += 1
+        pieces.append((start, int(g[-1])))
+        for a, b in pieces:
+            lo, hi = max(0, a - w), min(n - 1, a + w)
+            if on[lo:hi + 1].max() >= cfg.learned_edge_min_prob:
+                a = lo + int(np.argmax(on[lo:hi + 1]))
+            lo, hi = max(0, b - w), min(n - 1, b + w)
+            if off[lo:hi + 1].max() >= cfg.learned_edge_min_prob:
+                b = lo + int(np.argmax(off[lo:hi + 1]))
+            if b > a:
+                out.append(np.arange(a, b + 1))
+    return out
+
+
 def _rejected_by_shape(members: np.ndarray, activity: FrameActivity, cfg: PreprocessingConfig) -> bool:
     """Her two ``filter_calls`` shape rejections, ported from source.
 
@@ -138,11 +185,15 @@ def activity_to_calls(activity: FrameActivity, cfg: PreprocessingConfig) -> List
     As in her ``filter_calls`` / ``save_calls``: duration is tested on the unpadded frame
     span (``last - first``), strictly, against ``min_call_duration_s`` (10 frames) and
     ``max_call_duration_s`` (4 s); only survivors are padded by ``boundary_pad_s``. The
-    call boundary is the first/last member's frame time.
+    call boundary is the first/last member's frame time. A learned model with edge heads
+    first splits and refines the runs (:func:`_split_and_refine`).
     """
     calls: List[CallSegment] = []
     floor = _frames(cfg.min_call_duration_s, activity)
-    for members in _active_runs(activity, cfg):
+    runs = _active_runs(activity, cfg)
+    if activity.onset_prob is not None and activity.offset_prob is not None:
+        runs = _split_and_refine(runs, activity, cfg)
+    for members in runs:
         span = int(members[-1] - members[0])
         if not (span > floor and span * activity.hop_s < cfg.max_call_duration_s):
             continue

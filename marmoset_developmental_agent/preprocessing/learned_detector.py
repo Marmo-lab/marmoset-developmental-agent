@@ -73,23 +73,29 @@ def normalise(features: np.ndarray) -> np.ndarray:
 
 
 class CallNet(nn.Module):
-    """Frame classifier: bands as channels, 1D convs over time, BiGRU, one logit per frame."""
+    """Frame classifier: bands as channels, 1D convs over time, BiGRU, logits per frame.
 
-    def __init__(self, n_bands: int, hidden: int = 96) -> None:
+    ``n_out`` heads share the trunk: head 0 is "inside a call"; with ``n_out == 3``, heads
+    1 and 2 score "a call starts here" and "a call ends here" (DETECTOR_EVAL finding 13).
+    The edge heads are what lets the post-processing put boundaries on the labeller's
+    edges and split two calls whose frames run together.
+    """
+
+    def __init__(self, n_bands: int, hidden: int = 96, n_out: int = 1) -> None:
         super().__init__()
 
         def block(i: int, o: int, d: int) -> nn.Sequential:
             return nn.Sequential(nn.Conv1d(i, o, 5, padding=2 * d, dilation=d), nn.BatchNorm1d(o), nn.ReLU())
 
-        self.n_bands, self.hidden = n_bands, hidden
+        self.n_bands, self.hidden, self.n_out = n_bands, hidden, n_out
         self.cnn = nn.Sequential(block(n_bands, hidden, 1), block(hidden, hidden, 1), block(hidden, hidden, 2))
         self.gru = nn.GRU(hidden, hidden // 2, batch_first=True, bidirectional=True)
-        self.out = nn.Linear(hidden, 1)
+        self.out = nn.Linear(hidden, n_out)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """``(B, F, T)`` normalised features -> ``(B, T)`` logits."""
+        """``(B, F, T)`` normalised features -> ``(B, n_out, T)`` logits."""
         h, _ = self.gru(self.cnn(x).transpose(1, 2))
-        return self.out(h).squeeze(-1)
+        return self.out(h).transpose(1, 2)
 
 
 def resolve_model_path(path: str) -> Path:
@@ -99,20 +105,20 @@ def resolve_model_path(path: str) -> Path:
 
 
 def save_call_detector(net: CallNet, path: Path) -> None:
-    torch.save({"n_bands": net.n_bands, "hidden": net.hidden, "state_dict": net.state_dict()}, path)
+    torch.save({"n_bands": net.n_bands, "hidden": net.hidden, "n_out": net.n_out, "state_dict": net.state_dict()}, path)
 
 
 @lru_cache(maxsize=4)
 def load_call_detector(path: str) -> CallNet:
     """Load (once per process) a checkpoint written by :func:`save_call_detector`."""
     ckpt = torch.load(resolve_model_path(path), map_location="cpu", weights_only=True)
-    net = CallNet(ckpt["n_bands"], ckpt["hidden"])
+    net = CallNet(ckpt["n_bands"], ckpt["hidden"], ckpt.get("n_out", 1))
     net.load_state_dict(ckpt["state_dict"])
     return net.eval()
 
 
-def call_probability(features: np.ndarray, net: CallNet) -> np.ndarray:
-    """Per-frame call probability for one block of features."""
+def frame_probabilities(features: np.ndarray, net: CallNet) -> np.ndarray:
+    """``(n_out, T)`` per-frame probabilities for one block: call, then onset / offset if present."""
     if features.shape[0] != net.n_bands:
         raise ValueError(f"model expects {net.n_bands} bands, features have {features.shape[0]}")
     with torch.no_grad():

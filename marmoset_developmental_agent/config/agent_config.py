@@ -151,6 +151,15 @@ class PreprocessingConfig:
     learned_n_fft: int = 1024  # [ours]
     learned_hop_length: int = 480  # [ours]
     learned_band_hz: float = 250.0  # [ours]
+    # Edge heads (models with onset / offset outputs; DETECTOR_EVAL finding 13). Each call's
+    # first and last frame move to the strongest onset / offset peak within this window,
+    # if that peak reaches learned_edge_min_prob. A call is split where an offset peak and
+    # a later onset peak both reach learned_split_prob within learned_split_max_gap_s of
+    # each other. None disables splitting.
+    learned_edge_search_s: float = 0.06  # [ours]
+    learned_edge_min_prob: float = 0.2  # [ours]
+    learned_split_prob: Optional[float] = 0.5  # [ours]
+    learned_split_max_gap_s: float = 0.3  # [ours]
 
     # --- shared run grouping and duration limits -------------------------------- #
     # [talia] Gaps <= 4 frames between active frames are bridged into one call
@@ -188,6 +197,20 @@ class PreprocessingConfig:
     # 64 s clips it was evaluated on.
     stream_block_s: float = 60.0
     stream_context_s: float = 5.0
+
+    # --- call catalogue and call audio [ours] ------------------------------------ #
+    # Since 2026-10-22 the product is individual calls with exact wall-clock times, not
+    # 10 s chunks (SESSION_STATE). Call audio is cut from the training channel at
+    # call_audio_sample_rate: the native 48 kHz, so nothing is lost before the encoder's
+    # rate is chosen (32 kHz keeps a median 96% of call energy, 16 kHz 35%). Each call is
+    # stored with call_audio_margin_s of context on both sides; the catalogue keeps the
+    # exact edges. Notes inside a call: runs of frames whose loudest band stands
+    # note_min_db above its floor, split at silences longer than note_gap_s; notes shorter
+    # than note_gap_s are dropped.
+    call_audio_sample_rate: int = 48_000
+    call_audio_margin_s: float = 0.05
+    note_min_db: float = 12.0
+    note_gap_s: float = 0.02
 
     # --- output chunking (GmSLM A.2) -------------------------------------------- #
     chunk_duration_s: float = 10.0  # [paper] + [talia]

@@ -120,6 +120,8 @@ class FrameActivity:
     peak_freq_hz: Optional[np.ndarray] = None  # (T,) frequency of that bin
     harmonic: Optional[np.ndarray] = None  # (T,) bool, harmonic-comb frame
     call_prob: Optional[np.ndarray] = None  # (T,) learned detector's call probability
+    onset_prob: Optional[np.ndarray] = None  # (T,) learned "a call starts here", if the model has it
+    offset_prob: Optional[np.ndarray] = None  # (T,) learned "a call ends here"
 
 
 def highpass_filter(
@@ -328,10 +330,11 @@ def _learned_frame_activity(
     detection decision uses none of them.
     """
     from marmoset_developmental_agent.preprocessing.learned_detector import (
-        band_edges, call_probability, learned_features, load_call_detector)
+        band_edges, frame_probabilities, learned_features, load_call_detector)
 
     feats, times = learned_features(audio, sample_rate, cfg)
-    prob = call_probability(feats, load_call_detector(cfg.learned_model_path))
+    probs = frame_probabilities(feats, load_call_detector(cfg.learned_model_path))
+    prob = probs[0]
     centres = (band_edges(cfg)[:-1] + band_edges(cfg)[1:]) / 2
     peak = feats.max(axis=0)
     width_hz = (feats > peak - cfg.tonal_peak_db).sum(axis=0) * cfg.learned_band_hz
@@ -343,6 +346,8 @@ def _learned_frame_activity(
         peak_db=peak,
         peak_freq_hz=centres[feats.argmax(axis=0)],
         call_prob=prob,
+        onset_prob=probs[1] if len(probs) == 3 else None,
+        offset_prob=probs[2] if len(probs) == 3 else None,
     )
 
 
