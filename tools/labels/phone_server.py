@@ -107,8 +107,8 @@ def lan_address() -> str:
 def make_handler(sets: Dict[str, Path], code: str, lock: threading.Lock) -> type:
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args: object) -> None:
-            if "/api/labels" in self.path:
-                print(f"{self.address_string()} {fmt % args}", flush=True)
+            # Every request, with the code hidden: the first thing to check when the phone "can't connect".
+            print(f"{self.address_string()} {(fmt % args).split('?')[0]}", flush=True)
 
         def _send(self, body: bytes, ctype: str, code_: int = 200, extra: Optional[Dict[str, str]] = None) -> None:
             self.send_response(code_)
@@ -176,6 +176,11 @@ def main() -> None:
     a = ap.parse_args()
     sets = {k: Path(v) for k, v in (s.split("=", 1) for s in a.set)} if a.set else DEFAULT_SETS
     code = a.code or f"{secrets.randbelow(10 ** 6):06d}"
+    try:
+        server = ThreadingHTTPServer(("0.0.0.0", a.port), make_handler(sets, code, threading.Lock()))
+    except OSError as e:
+        raise SystemExit(f"port {a.port} is busy ({e.strerror}): another phone_server is probably running; "
+                         f"stop it (lsof -nP -iTCP:{a.port}) or use --port") from e
     m = manifest(sets)
     for s in m["sets"]:
         done = sum(c["labels"] is not None for c in s["clips"])
@@ -183,7 +188,8 @@ def main() -> None:
     url = f"http://{lan_address()}:{a.port}"
     print(f"\nin the app:  address {url}   code {code}", flush=True)
     print(f"install APK: {url}/app.apk?t={code}" + ("" if APK.exists() else "  (not built yet)"), flush=True)
-    ThreadingHTTPServer(("0.0.0.0", a.port), make_handler(sets, code, threading.Lock())).serve_forever()
+    print(f"check from the phone's browser: {url}/api/manifest?t={code}  (each request is printed below)\n", flush=True)
+    server.serve_forever()
 
 
 if __name__ == "__main__":
