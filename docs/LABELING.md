@@ -77,3 +77,32 @@ Tell Claude. The importer reads whatever is in `labeling/labels/`:
 ```bash
 python tools/labels/import_audacity.py labeling/clips.csv labeling/labels -o data/labels/handlabels.csv
 ```
+
+## Labelling on the phone (MarmoLabel, Android)
+
+The same rules, on an Android phone instead of Audacity. The app (`apps/labeler`, built with
+`apps/labeler/build.sh`) holds every clip of the three sets (calibration, heldout, test;
+about 350 MB) and works offline.
+
+1. On the Mac: `python tools/labels/phone_server.py`. It prints an address and a 6-digit code.
+   The phone must be on the same Wi-Fi. If macOS asks whether Python may accept incoming
+   connections, allow it.
+2. Install once: open the printed `.../app.apk?t=<code>` link in the phone's browser and
+   install it (Android asks to allow installs from the browser).
+3. In the app, enter the address and code, then tap **⬇ הורד הקלטות**. After that, every time
+   the app opens on Wi-Fi with the server running, it fetches new clips and the Mac's
+   current labels by itself.
+4. Labelling a clip:
+   - Pinch with two fingers to zoom, and slide two fingers to scroll. The strip on top shows
+     the whole clip; touch it to jump.
+   - Drag one finger to select a stretch, then press **c** or **?**.
+   - Tap a label to select it, then drag its round handles to fix the edges.
+   - **▶** plays the selection, or the visible window when nothing is selected. **×½** plays
+     it an octave down.
+   - **אין קריאות** marks a clip with no calls; it is the same as `none` in Audacity.
+5. Tick **הקטע גמור** when a clip is finished. Only finished clips leave the phone. They go:
+   - automatically to `Download/MarmoLabel/<set>/<clip>.txt` on the phone, to copy by hand;
+   - to `labels/` of their set on the Mac, when you tap **⬆ שלח למחשב** with the server
+     running. If a different file is already there, it is first kept in `labels/.bak/`.
+
+The files have Audacity's format, so the import command above reads them unchanged.

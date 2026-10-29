@@ -34,3 +34,6 @@ references/
 # labeling/ = calibration set, labeling/heldout/ = held-out test set.
 labeling/
 !models/call_detector_*.pt
+
+# MarmoLabel build output
+apps/labeler/build/

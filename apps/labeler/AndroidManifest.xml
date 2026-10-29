@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MarmoLabel: label marmoset calls on the phone. Cleartext HTTP is allowed because the
+     only server is tools/labels/phone_server.py on the user's own Mac, on the local Wi-Fi. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="il.ac.huji.omerlab.marmolabel">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application
+        android:label="MarmoLabel"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@android:style/Theme.Material.NoActionBar"
+        android:usesCleartextTraffic="true"
+        android:supportsRtl="true"
+        android:allowBackup="false">
+
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".ClipActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
+    </application>
+</manifest>
