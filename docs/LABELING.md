@@ -97,10 +97,10 @@ about 350 MB) and works offline.
      the whole clip; touch it to jump.
    - Drag one finger to select a stretch, then press **c** or **?**.
    - Tap a label to select it, then drag its round handles to fix the edges.
-   - **▶** plays the selection, or the visible window when nothing is selected. **×½** plays
-     it an octave down.
-   - **אין קריאות** marks a clip with no calls; it is the same as `none` in Audacity.
-5. Tick **הקטע גמור** when a clip is finished. Only finished clips leave the phone. They go:
+   - **▶** plays the selection, or the visible window when nothing is selected.
+   - **↶** undoes the last change, including a new label (there is no separate delete).
+5. Tick **הקטע גמור** when a clip is finished. A finished clip with no labels is saved as
+   `none` (checked, no calls) by itself. Only finished clips leave the phone. They go:
    - automatically to `Download/MarmoLabel/<set>/<clip>.txt` on the phone, to copy by hand;
    - to `labels/` of their set on the Mac, when you tap **⬆ שלח למחשב** with the server
      running. If a different file is already there, it is first kept in `labels/.bak/`.

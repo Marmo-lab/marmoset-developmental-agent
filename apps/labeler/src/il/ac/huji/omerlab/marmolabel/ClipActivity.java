@@ -19,7 +19,9 @@ import java.util.Locale;
 
 /**
  * Label one clip: overview strip, zoomable spectrogram, playback, and the label buttons.
- * Every change is saved at once (Store.save); "done" releases the clip to the Mac.
+ * Every change is saved at once (Store.save); "done" releases the clip to the Mac. A clip
+ * marked done without any label is a clip without calls: it is saved as {@code none}
+ * (LABELING.md), so the labeller never states "no calls" separately.
  */
 public final class ClipActivity extends Activity implements SpectrogramView.Listener {
     private Store store;
@@ -30,11 +32,10 @@ public final class ClipActivity extends Activity implements SpectrogramView.List
     private OverviewView overview;
     private TextView info;
     private CheckBox done;
-    private Button modeBtn, playBtn, speedBtn;
+    private Button modeBtn, playBtn;
     private final Audio.Player player = new Audio.Player();
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final ArrayDeque<Labels> undo = new ArrayDeque<>();
-    private boolean half;
     private float dp;
 
     private final Runnable tick = new Runnable() {
@@ -97,19 +98,10 @@ public final class ClipActivity extends Activity implements SpectrogramView.List
             modeBtn.setText(view.markMode ? "✎ סימון" : "✋ גלילה");
         });
         playBtn = button(r1, "▶ נגן", 0, v -> play());
-        speedBtn = button(r1, "מהירות ×1", 0, v -> {
-            half = !half;
-            speedBtn.setText(half ? "מהירות ×½" : "מהירות ×1");
-        });
         button(r1, "↶ בטל", 0, v -> undo());
+        button(r1, "c", SpectrogramView.CALL, v -> assign("c"));
+        button(r1, "?", SpectrogramView.UNSURE, v -> assign("?"));
         root.addView(r1);
-
-        LinearLayout r2 = row();
-        button(r2, "c  קריאה", SpectrogramView.CALL, v -> assign("c"));
-        button(r2, "?  לא בטוח", SpectrogramView.UNSURE, v -> assign("?"));
-        button(r2, "🗑 מחק", 0, v -> delete());
-        button(r2, "אין קריאות", 0, v -> toggleNone());
-        root.addView(r2);
         setContentView(root);
         updateInfo();
 
@@ -174,7 +166,7 @@ public final class ClipActivity extends Activity implements SpectrogramView.List
             a = view.selected.s - 0.05;
             b = view.selected.e + 0.05;
         }
-        player.play(audio, a, b, half);
+        player.play(audio, a, b);
         playBtn.setText("■ עצור");
         ui.post(tick);
     }
@@ -202,29 +194,6 @@ public final class ClipActivity extends Activity implements SpectrogramView.List
         }
     }
 
-    private void delete() {
-        if (view.pendS >= 0) {
-            view.clearSelection();
-        } else if (view.selected != null) {
-            beforeEdit();
-            labels.list.remove(view.selected);
-            view.clearSelection();
-            changed();
-        }
-        view.invalidate();
-        updateInfo();
-    }
-
-    private void toggleNone() {
-        if (!labels.list.isEmpty()) {
-            toast("יש סימונים בקטע: מחק אותם קודם");
-            return;
-        }
-        beforeEdit();
-        labels.none = !labels.none;
-        changed();
-    }
-
     private void undo() {
         if (undo.isEmpty()) {
             toast("אין מה לבטל");
@@ -237,12 +206,13 @@ public final class ClipActivity extends Activity implements SpectrogramView.List
     }
 
     private void setDone(boolean on) {
-        if (on && !labels.finished()) {
-            toast("סמן קריאות, או 'אין קריאות', לפני שמסמנים גמור");
-            done.setChecked(false);
-            return;
+        if (labels.list.isEmpty() && labels.none != on) {
+            labels.none = on;  // done with no labels = checked, no calls
+            save();
+            view.invalidate();
+        } else if (on && !store.hasOwn(set, clip)) {
+            save();  // a clip labelled on the computer, accepted as is
         }
-        if (on && !store.hasOwn(set, clip)) save();  // a clip labelled on the computer, accepted as is
         store.setDone(set, clip, on);
     }
 
@@ -256,7 +226,7 @@ public final class ClipActivity extends Activity implements SpectrogramView.List
 
     @Override
     public void changed() {
-        if (done.isChecked() && !labels.finished()) done.setChecked(false);
+        if (done.isChecked()) labels.none = labels.list.isEmpty();
         save();
         view.invalidate();
         overview.invalidate();

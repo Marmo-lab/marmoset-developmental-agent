@@ -51,14 +51,14 @@ final class Audio {
         throw new IOException("no audio data");
     }
 
-    /** Plays one stretch of a clip, peak-normalised so quiet calls are audible, optionally at half speed (an octave down). */
+    /** Plays one stretch of a clip, peak-normalised so quiet calls are audible. */
     static final class Player {
         private AudioTrack track;
         private volatile boolean stopped = true;
         private double startT;
         private int n, rate;
 
-        void play(Audio a, double t0, double t1, boolean half) {
+        void play(Audio a, double t0, double t1) {
             stop();
             int i0 = Math.max(0, (int) (t0 * a.rate)), i1 = Math.min(a.x.length, (int) (t1 * a.rate));
             if (i1 <= i0) return;
@@ -74,7 +74,6 @@ final class Audio {
                     .setAudioFormat(new AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT)
                             .setSampleRate(a.rate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
                     .setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(Math.max(min, 8192) * 4).build();
-            if (half) t.setPlaybackRate(a.rate / 2);
             track = t;
             startT = i0 / (double) a.rate;
             n = buf.length;
