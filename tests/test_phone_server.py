@@ -53,3 +53,11 @@ def test_manifest_lists_only_clips_with_audio(tmp_path):
     m = manifest({"test": folder})
     assert [c["id"] for c in m["sets"][0]["clips"]] == ["ts_01"]
     assert m["sets"][0]["clips"][0]["labels"] is None
+
+
+def test_manifest_can_list_only_unlabelled_clips(tmp_path):
+    folder = _set(tmp_path)
+    (folder / "clips" / "ts_02.wav").write_bytes(b"RIFF....")
+    write_labels(folder, "ts_01", parse_labels("1\t2\tc\n"))
+    m = manifest({"test": folder}, only={("test", "ts_02")})
+    assert [c["id"] for c in m["sets"][0]["clips"]] == ["ts_02"]

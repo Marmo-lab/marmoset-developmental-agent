@@ -18,6 +18,13 @@ For a held-out test set, ``--exclude`` takes one or more earlier ``clips.csv``: 
 source recordings are skipped and their dates are treated as already used, so the new
 clips come from recordings (and, where possible, days) the detector never saw.
 
+For a training set to label, ``--around-calls RUN`` (a ``detect_corpus.py`` run) places
+every clip around one detected call of its recording, chosen at random, at a random
+position inside the minute, so no clip comes back empty. The clip still holds whatever
+else happens around that call (missed calls, noise), which is what labelling should fix.
+This biases the set toward recordings and hours with calls: fine for training, never
+for a test set.
+
 Duplicate copies of a recording on the shared drive (same file name and start time, e.g.
 ``Rec_2021_07_14-17`` copying ``Rec_2021_07_08-13``) are drawn at most once: the first
 copy in manifest order is kept.
@@ -31,6 +38,9 @@ Usage (on the cluster):
     python tools/labels/make_clips.py $WORK_DIR/manifests/recordings.csv \
         -o $WORK_DIR/labeling_test --day 15 --night 0 --seed 20261022 \
         --exclude $WORK_DIR/labeling/clips.csv $WORK_DIR/labeling_heldout/clips.csv --prefix ts
+    python tools/labels/make_clips.py $WORK_DIR/manifests/recordings.csv \
+        -o $WORK_DIR/labeling_train2 --day 40 --night 0 --seed 20261029 --prefix tr \
+        --around-calls $WORK_DIR/corpus/v3_calls --exclude <the three clips.csv above>
 """
 
 from __future__ import annotations
@@ -38,8 +48,10 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime as dt
+import json
 import random
 from pathlib import Path
+from typing import Dict, List
 
 import numpy as np
 import soundfile as sf
@@ -54,6 +66,17 @@ def is_day(t: dt.datetime) -> bool:
     return 6 <= t.hour < 19
 
 
+def call_starts(run: Path) -> Dict[str, List[float]]:
+    """Detected call onsets (s into the file) per source path, from a corpus run."""
+    out: Dict[str, List[float]] = {}
+    for p in (run / "files").glob("*.json"):
+        info = json.loads(p.read_text())
+        calls = run / "calls" / f"{p.stem}.csv"
+        if info.get("n_calls") and calls.exists():
+            out[info["path"]] = [float(r["start_s"]) for r in csv.DictReader(open(calls))]
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -65,7 +88,9 @@ def main() -> None:
     ap.add_argument("--exclude", nargs="*", default=[],
                     help="earlier clips.csv files: skip their recordings, prefer other dates")
     ap.add_argument("--prefix", default="clip", help="clip id prefix, e.g. ho for a held-out set")
+    ap.add_argument("--around-calls", metavar="RUN", help="corpus run: place each clip around one of its detected calls")
     a = ap.parse_args()
+    starts = call_starts(Path(a.around_calls)) if a.around_calls else None
 
     prior = [r for path in a.exclude for r in csv.DictReader(open(path))]
     skip = {r["source_path"] for r in prior}
@@ -88,6 +113,13 @@ def main() -> None:
             if dur < CLIP_S + 2 * MARGIN_S:
                 continue
             off = rng.uniform(MARGIN_S, dur - MARGIN_S - CLIP_S)
+            if starts is not None:
+                if not starts.get(r["path"]):
+                    continue
+                s = rng.choice(starts[r["path"]])
+                off = min(max(s - rng.uniform(5.0, CLIP_S - 5.0), MARGIN_S), dur - MARGIN_S - CLIP_S)
+                if not off <= s <= off + CLIP_S - 1.0:  # the call lies in the file's first or last minute
+                    continue
             t = t0 + dt.timedelta(seconds=off)
             if is_day(t) == day:
                 pool.append((r, off, t))

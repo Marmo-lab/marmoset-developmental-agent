@@ -9,8 +9,11 @@ alike. A label file that already exists and differs is first copied to
 ``labels/.bak/<clip>.<time>.txt``: nothing labelled in Audacity is ever lost.
 
 Sets (``name=folder``; each folder holds ``clips.csv``, ``clips/<file>`` and ``labels/``):
-calibration = ``labeling``, heldout = ``labeling/heldout``, test = ``labeling/test``.
-The app never runs a detector, so serving the blind test set keeps TEST_PROTOCOL.md.
+by default test = ``labeling/test`` and train2 = ``labeling/train2`` (clips around detected
+calls, tools/cluster/make_trainset.sbatch), and only their clips that have no label file
+when the server starts: what is still to label. ``--all-clips`` serves labelled clips
+too; ``--set`` replaces the sets (e.g. ``--set calibration=labeling``). The app never runs
+a detector, so serving the blind test set keeps TEST_PROTOCOL.md.
 
 Every request carries the pairing code printed at start-up (``?t=...``); the phone
 asks for it once. The APK itself is served at ``/app.apk`` for installing.
@@ -30,25 +33,27 @@ import socket
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import parse_qs, unquote, urlparse
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_SETS = {"calibration": ROOT / "labeling", "heldout": ROOT / "labeling" / "heldout",
-                "test": ROOT / "labeling" / "test"}
+DEFAULT_SETS = {"test": ROOT / "labeling" / "test", "train2": ROOT / "labeling" / "train2"}
 APK = ROOT / "apps" / "labeler" / "build" / "marmolabel.apk"
 TEXTS = {"c", "?", "n", "none"}  # LABELING.md; import_audacity.VALID plus the no-calls marker
 MAX_BODY = 1 << 20
 
 
-def manifest(sets: Dict[str, Path]) -> Dict[str, object]:
-    """Every set's clips with their audio size and current labels (``None`` = not labelled yet)."""
+def manifest(sets: Dict[str, Path], only: Optional[Set[Tuple[str, str]]] = None) -> Dict[str, object]:
+    """Every set's clips with their audio size and current labels (``None`` = not labelled yet).
+
+    ``only``: the (set, clip) pairs to list; ``None`` lists all.
+    """
     out: List[Dict[str, object]] = []
     for name, folder in sets.items():
         clips = []
         for r in csv.DictReader(open(folder / "clips.csv")):
             audio = folder / "clips" / r["file"]
-            if not audio.exists():
+            if not audio.exists() or (only is not None and (name, r["clip_id"]) not in only):
                 continue
             lab = folder / "labels" / f"{r['clip_id']}.txt"
             clips.append({"id": r["clip_id"], "wall_time": r["wall_time"], "duration_s": float(r["duration_s"]),
@@ -104,7 +109,8 @@ def lan_address() -> str:
             return "127.0.0.1"
 
 
-def make_handler(sets: Dict[str, Path], code: str, lock: threading.Lock) -> type:
+def make_handler(sets: Dict[str, Path], code: str, lock: threading.Lock,
+                 only: Optional[Set[Tuple[str, str]]] = None) -> type:
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args: object) -> None:
             # Every request, with the code hidden: the first thing to check when the phone "can't connect".
@@ -137,7 +143,7 @@ def make_handler(sets: Dict[str, Path], code: str, lock: threading.Lock) -> type
                 return
             parts = [unquote(p) for p in urlparse(self.path).path.strip("/").split("/")]
             if parts == ["api", "manifest"]:
-                self._send(json.dumps(manifest(sets)).encode(), "application/json")
+                self._send(json.dumps(manifest(sets, only)).encode(), "application/json")
             elif len(parts) == 3 and parts[0] == "audio" and (row := self._clip(parts[1], parts[2])):
                 self._send((sets[parts[1]] / "clips" / row["file"]).read_bytes(), "audio/wav")
             elif parts == ["app.apk"] and APK.exists():
@@ -173,18 +179,25 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=8766)
     ap.add_argument("--code", help="pairing code (default: a random 6-digit one)")
     ap.add_argument("--set", action="append", default=[], metavar="NAME=FOLDER", help="replace the default sets")
+    ap.add_argument("--all-clips", action="store_true", help="also serve clips that already have labels")
     a = ap.parse_args()
     sets = {k: Path(v) for k, v in (s.split("=", 1) for s in a.set)} if a.set else DEFAULT_SETS
+    sets = {k: v for k, v in sets.items() if (v / "clips.csv").exists()}
+    if not sets:
+        raise SystemExit("no labelling set found (each needs clips.csv)")
+    # Fixed at start-up, so a clip labelled during this session stays in the app's list.
+    only = None if a.all_clips else {(n, c["id"]) for n, f in sets.items()
+                                     for c in manifest({n: f})["sets"][0]["clips"] if c["labels"] is None}
     code = a.code or f"{secrets.randbelow(10 ** 6):06d}"
     try:
-        server = ThreadingHTTPServer(("0.0.0.0", a.port), make_handler(sets, code, threading.Lock()))
+        server = ThreadingHTTPServer(("0.0.0.0", a.port), make_handler(sets, code, threading.Lock(), only))
     except OSError as e:
         raise SystemExit(f"port {a.port} is busy ({e.strerror}): another phone_server is probably running; "
                          f"stop it (lsof -nP -iTCP:{a.port}) or use --port") from e
-    m = manifest(sets)
-    for s in m["sets"]:
+    for s in manifest(sets)["sets"]:
         done = sum(c["labels"] is not None for c in s["clips"])
-        print(f"{s['name']}: {len(s['clips'])} clips, {done} labelled", flush=True)
+        served = len(s["clips"]) if only is None else sum((s["name"], c["id"]) in only for c in s["clips"])
+        print(f"{s['name']}: {len(s['clips'])} clips, {done} labelled; serving {served}", flush=True)
     url = f"http://{lan_address()}:{a.port}"
     print(f"\nin the app:  address {url}   code {code}", flush=True)
     print(f"install APK: {url}/app.apk?t={code}" + ("" if APK.exists() else "  (not built yet)"), flush=True)

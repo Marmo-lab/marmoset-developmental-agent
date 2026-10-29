@@ -195,11 +195,13 @@ final class Store {
             String text = new String(readAll(c.getInputStream()), StandardCharsets.UTF_8);
             JSONObject m = new JSONObject(text);
             JSONArray sets = m.getJSONArray("sets");
+            java.util.Set<String> listed = new java.util.HashSet<>();
             for (int i = 0; i < sets.length(); i++) {
                 JSONObject set = sets.getJSONObject(i);
                 JSONArray clips = set.getJSONArray("clips");
                 for (int j = 0; j < clips.length(); j++) {
                     JSONObject clip = clips.getJSONObject(j);
+                    listed.add(audio(set.getString("name"), clip.getString("id")).getPath());
                     File f = computer(set.getString("name"), clip.getString("id"));
                     if (clip.isNull("labels")) {
                         //noinspection ResultOfMethodCallIgnored
@@ -210,6 +212,15 @@ final class Store {
                 }
             }
             write(new File(root, "manifest.json"), text);
+            // Audio of clips the Mac no longer lists (labelled, or another set) is dropped to free
+            // space; labels are never deleted.
+            File[] dirs = new File(root, "audio").listFiles();
+            for (File d : dirs == null ? new File[0] : dirs) {
+                File[] files = d.listFiles();
+                for (File f : files == null ? new File[0] : files)
+                    //noinspection ResultOfMethodCallIgnored
+                    if (!listed.contains(f.getPath())) f.delete();
+            }
             return m;
         } finally {
             c.disconnect();

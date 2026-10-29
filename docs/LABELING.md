@@ -81,8 +81,10 @@ python tools/labels/import_audacity.py labeling/clips.csv labeling/labels -o dat
 ## Labelling on the phone (MarmoLabel, Android)
 
 The same rules, on an Android phone instead of Audacity. The app (`apps/labeler`, built with
-`apps/labeler/build.sh`) holds every clip of the three sets (calibration, heldout, test;
-about 350 MB) and works offline.
+`apps/labeler/build.sh`) holds the clips still to label and works offline. By default the
+server offers the unlabelled clips of `test` and of `train2` (40 clips cut around detected
+calls by `tools/cluster/make_trainset.sbatch`, so none is empty); `--all-clips` and `--set`
+change that. Audio of clips no longer offered is removed from the phone; labels never are.
 
 1. On the Mac: `python tools/labels/phone_server.py`. It prints an address and a 6-digit code.
    The phone must be on the same Wi-Fi. If macOS asks whether Python may accept incoming
