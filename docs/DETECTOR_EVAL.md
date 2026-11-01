@@ -265,3 +265,46 @@ cross-validation, same folds as finding 12 (`train_call_detector.py cv --heads 3
 - v1 stays the shipped model. The code path is used only by a model with three heads.
 - The old labels were made to about ±50 ms, so boundary differences smaller than that cannot be measured on them.
   The blind test set (`labeling/test`, labelled to the visible edges) is the place to measure boundaries next.
+
+## Finding 14: blind test set, scored once (2026-11-01)
+
+Scored once, as `docs/TEST_PROTOCOL.md` fixed it in advance. All 15 clips are labelled: 200 `c` and 34 `?`, and 4
+clips have no calls. The run used a checkout of the frozen commit 8d815bb, the model sha256 `da94fdadead78ed3`, and
+`tools/analysis/score_testset.py`. The output is in `outputs/testset_v1/` (`report.txt`, `test_scores.json`,
+`test_detections.json`). Intervals are 95%, from 2000 bootstrap resamples of the clips. Labels are counted as `c`, with
+`?` ignored.
+
+| detector | P | R | F1 | P@IoU.5 | R@IoU.5 | time P | time R | 1:1 | both edges ≤ 50 ms |
+|---|---|---|---|---|---|---|---|---|---|
+| learned v1 (primary) | 0.94 ± 0.04 | 0.93 ± 0.05 | 0.93 ± 0.02 | 0.60 ± 0.14 | 0.77 ± 0.10 | 0.96 ± 0.03 | 0.80 ± 0.08 | 0.76 | 0.43 |
+| learned v1, no `short_low_conf` | 0.96 ± 0.03 | 0.90 ± 0.04 | 0.93 ± 0.02 | 0.63 ± 0.14 | 0.76 ± 0.10 | 0.96 ± 0.03 | 0.79 ± 0.08 | 0.74 | 0.44 |
+| harmonic rule (reference) | 0.84 ± 0.10 | 0.96 ± 0.03 | 0.90 ± 0.06 | 0.43 ± 0.10 | 0.69 ± 0.07 | 0.82 ± 0.12 | 0.85 ± 0.02 | 0.68 | 0.22 |
+| Talia port (capsule mean) | 0.87 ± 0.18 | 0.34 ± 0.15 | 0.48 ± 0.15 | 0.36 ± 0.13 | 0.19 ± 0.09 | 0.87 ± 0.16 | 0.30 ± 0.10 | 0.26 | 0.06 |
+
+- **Event detection generalises.** The learned detector's P / R of 0.94 / 0.93 on untouched clips matches its
+  cross-validated 0.93 / 0.93 (finding 12). Against the rule detector it trades a little recall (0.93 vs 0.96) for
+  much higher precision (0.94 vs 0.84) and better segments (R@IoU.5 0.77 vs 0.69). Their F1 intervals overlap. Talia's
+  front-end finds a third of the calls.
+- **Boundaries are the weak part.** On one-to-one matches the median error is 14 ms at the onset and 53 ms at the
+  offset. Both edges fall within 50 ms in 43% of matches, and within 30 ms in 28%. The error has a direction: onsets
+  are unbiased (signed median +3 ms), but the detector ends calls earlier than the labels (signed median −41 ms).
+  The faint tail of a call that the labeller still sees is lost below the detection threshold. This bias is
+  systematic, so it can be corrected in v2. It is not corrected in this report.
+- **Label granularity.** The user labelled calls that were touching or nearly so as one call (2026-11-01), and the
+  importer merges gaps under 0.1 s (it merged 24 labels in ts_08–ts_15). The user also notes that hand edges are
+  imprecise. The split and merge counts and the edge errors are therefore partly a matter of labelling granularity
+  and labeller precision. Separating the two would need a second annotator (inter-rater agreement).
+- **ts_07 (dense series) alone:** P 1.00, R 0.83, R@IoU.5 0.43, no edge within 50 ms. These calls were labelled as
+  fewer, longer calls. Without ts_07, the learned detector's P / R are 0.94 / 0.94 and R@IoU.5 is 0.81.
+- **`short_low_conf`** raises P from 0.94 to 0.96 and lowers R from 0.93 to 0.90. No test label is shorter than
+  0.20 s, so the dropped detections that hit a label were fragments of longer calls.
+- **Recall by SNR** (`c` labels, n = 142 / 51 / 7 for < 10 / 10–20 / ≥ 20 dB): learned 0.90 / 0.98 / 1.00,
+  rule 0.94 / 1.00 / 1.00, Talia 0.27 / 0.47 / 0.57. Misses are concentrated in quiet calls.
+- **Recall by duration** (0.18–0.5 s / ≥ 0.5 s, n = 65 / 135): learned 0.88 / 0.95, rule 0.89 / 0.99.
+- **Divergences from the protocol.**
+  - Recall by shape cluster is not reported. The 45-clip clusters (t-SNE + HDBSCAN) cannot place new calls, and that
+    analysis was not kept as code. Duration bands stand in for it.
+  - The signed edge errors and the `without ts_07` rows were added after seeing the results, and are marked as such
+    here.
+- **Per protocol,** the test labels may now join training (v2), but v2 cannot be evaluated on them. A v2 claim needs
+  new clips; `labeling/train2` is for training, because it was cut around detections, so it cannot serve as that test.
