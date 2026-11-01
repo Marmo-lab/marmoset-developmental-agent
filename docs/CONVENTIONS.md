@@ -19,10 +19,15 @@ marmoset_developmental_agent/
   utils/                        synthetic_data (mock colony + PHEEDB), mock_pipeline, log
 tools/
   build_manifest.py, sweep_units.py
-  analysis/                     level_audit, aggregate_levels, verify_talia_port (the port gate), channel_eval,
-                                score_detectors, listen_detections, call_inventory
-  labels/                       make_clips, make_guide, import_audacity, review_labels (hand-label workflow, see LABELING.md)
-  corpus/                       detect_corpus (array job: per-recording call catalogue), summarize_corpus (per-date / hour / quality / label check)
+  analysis/                     verify_talia_port (the port gate), score_detectors, train_call_detector,
+                                score_testset (detector evaluation); level_audit, aggregate_levels,
+                                channel_eval, call_inventory (one-off audits, kept as provenance)
+  labels/                       make_clips, make_guide, import_audacity, review_labels, phone_server (hand-label workflow, see LABELING.md)
+  corpus/                       the production path, in order: detect_corpus (array job: per-recording call
+                                catalogue + call audio) -> merge_calls (chronological calls.tsv / calls_train.tsv)
+                                -> clean_corpus (spectrally cleaned call audio); call_library (browser over a run);
+                                summarize_corpus (per-date / hour / quality / label check); merge_corpus (10 s chunk
+                                manifest, GmSLM comparison arm)
   cluster/                      env.sh, setup_env.sh, *.sbatch (ELSC SLURM jobs)
 docs/                           ROADMAP, OPEN_DECISIONS, SESSION_STATE, DETECTOR_EVAL, LABELING, CODEMAP; audit/ = GmSLM code audit
 data/labels/                    hand labels (calibration: handlabels.csv, held-out: heldout_labels.csv)

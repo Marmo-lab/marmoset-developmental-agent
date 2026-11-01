@@ -131,8 +131,8 @@ count (1), not on the missing timestamp.
   `short_low_conf`.
 - Location: `~/marmoset_work/corpus/v3_calls/`: `calls.tsv`, `calls_train.tsv`, `calls_summary.json`,
   `call_audio/<rid>.flac` (48 kHz, 24-bit). Read a call with `merge_calls.read_call`.
-- **Cleaning:** `clean_corpus.py --one-per-date` (job 64728860), then the listening page `listen_clean.py` (job
-  64728876, after it). Output in `call_audio_clean/` and `~/marmoset_work/listen_clean`.
+- **Cleaning:** `clean_corpus.py --one-per-date` (job 64728860), then browsed with `call_library.py`. Output in
+  `call_audio_clean/`.
 - **Cluster access from off campus:** `elsc-login-indirect` (ProxyJump hurcs-proxy) with ControlMaster sockets in
   `~/.ssh/sockets` (added 2026-10-26). The user authenticates once with 2FA, then `ssh -o BatchMode=yes
   elsc-login-indirect` works for up to 8 h.

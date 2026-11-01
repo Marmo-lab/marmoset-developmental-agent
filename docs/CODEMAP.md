@@ -128,7 +128,7 @@ Omer_Lab_Project/
 6. **Frame ↔ time mapping** (lexicon, probes). Call times map to frames as `int(start_s·50)` and `ceil(end_s·50)`. We ignore the 25 ms receptive field of the first frame, which Hasson corrects with a 5 ms shift. The error is at most one frame.
 7. **HuBERT is random in mock mode.** Without `pretrained_path` the HuBERT weights are random-init, so its units are meaningless (the pipeline logs a warning). k-means is fitted in `run_pipeline.py` on the training chunks. **Centroids live in a buffer** (`centroids`) so they are saved in checkpoints; `load_state_dict` resizes that buffer before loading.
 8. **Frozen encoders are cached.** When the encoder is not trained (HuBERT, or DINO-SR with `train_encoder: false`), the trainer caches units per chunk index. A trained DINO-SR re-encodes every batch, because its codebook and teacher keep changing.
-9. **Chunks keep the gaps.** The noise gate is used for *detection* only; training chunks are not silenced between calls (GmSLM: 60% gaps). `noise_gate()` is only for the standalone CLI (`--gate`).
+9. **Chunks keep the gaps.** The noise gate is used for *detection* only; training chunks are not silenced between calls (GmSLM: 60% gaps).
 10. **The last day may be partial.** `DailyExposureSchedule.day_sizes` cuts the chronological stream exactly; the final day takes whatever is left. `run_pipeline.py` treats days after `num_days` (or the last `eval_holdout_days`) as the held-out test set.
 11. **Scoring reduction.** Zero-shot comparisons default to the **mean** log-prob per unit (`score_reduction: mean`). Shuffle, Reversal and Concat pairs have equal length, so sum and mean agree there; Phee responses differ in length, so mean avoids a length bias.
 12. **Segmentation thresholds are guesses.** `filter_5khz` and `segmentation` re-implement the GmSLM paper's prose; the thresholds are uncalibrated. On synthetic data P = R = 1 by construction, which says nothing about real colony audio.
@@ -224,9 +224,7 @@ Omer_Lab_Project/
   - `resample_audio(audio, orig_sr, target_sr) -> float32`: `resample_poly(up = target/g, down = orig/g)` with g = gcd.
   - `compute_frame_activity(audio, sr, cfg) -> FrameActivity`
     - **Key Logic**: STFT (n_fft 2048, hop 512, no boundary padding); keep bins ≥ cutoff; `S_db = 10 log10|X|²`; `floor_f = median_t S_db`; `rel = S_db − floor`; `density_t = mean_f[rel > θ]`; `variance_t = var_f(rel)`; `active = ρ_min ≤ density ≤ ρ_max ∧ variance ≥ v_min`. Tonal calls are narrow and peaky; clicks are broadband; hiss is flat.
-  - `noise_gate(audio, sr, cfg, attenuation_db=40, activity=None) -> (gated (L,), FrameActivity)`: frame gains (1 or 10^(−40/20)) linearly interpolated to samples.
   - `preprocess_waveform(audio, sr, cfg) -> (filtered_native (L,), FrameActivity)`: HPF, then activity.
-  - `main(argv)` / `_read_audio`: CLI `input output [--cutoff --order --target-sr --gate --attenuation-db]`; mixes to mono; prints the fraction of active frames.
 
 #### `preprocessing/segmentation.py`
 - **Primary Purpose**: Turns frame activity into call events and packs calls into fixed 10 s, 16 kHz training chunks.

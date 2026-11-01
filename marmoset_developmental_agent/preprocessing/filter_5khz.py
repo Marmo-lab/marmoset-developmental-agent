@@ -87,7 +87,6 @@ applies to detection only -- the audio handed downstream is unfiltered unless
 
 from __future__ import annotations
 
-import argparse
 from dataclasses import dataclass
 from math import gcd
 from typing import Optional, Tuple
@@ -362,26 +361,6 @@ def compute_frame_activity(
     return _spectral_frame_activity(audio, sample_rate, cfg)
 
 
-def noise_gate(
-    audio: np.ndarray,
-    sample_rate: int,
-    cfg: PreprocessingConfig,
-    attenuation_db: float = 40.0,
-    activity: Optional[FrameActivity] = None,
-) -> Tuple[np.ndarray, FrameActivity]:
-    """Attenuate non-vocal frames by ``attenuation_db``.
-
-    The main pipeline does *not* gate the chunks it trains on: GmSLM keeps inter-call
-    gaps (about 60% of the audio). The gate is here for standalone use and for
-    visualisation.
-    """
-    act = activity if activity is not None else compute_frame_activity(audio, sample_rate, cfg)
-    gain_frames = np.where(act.active, 1.0, 10 ** (-attenuation_db / 20))
-    sample_t = np.arange(len(audio)) / sample_rate
-    gain = np.interp(sample_t, act.frame_times_s, gain_frames, left=gain_frames[0], right=gain_frames[-1])
-    return (audio * gain).astype(np.float32), act
-
-
 def preprocess_waveform(
     audio: np.ndarray, sample_rate: int, cfg: PreprocessingConfig
 ) -> Tuple[np.ndarray, FrameActivity]:
@@ -403,46 +382,3 @@ def preprocess_waveform(
     else:
         training = resample_audio(audio, sample_rate, cfg.target_sample_rate)
     return training, activity
-
-
-# --------------------------------------------------------------------------- #
-# CLI
-# --------------------------------------------------------------------------- #
-def _read_audio(path: str) -> Tuple[np.ndarray, int]:
-    import soundfile as sf
-
-    audio, sr = sf.read(path, dtype="float32", always_2d=True)
-    return audio.mean(axis=1), sr
-
-
-def main(argv: Optional[list] = None) -> None:
-    parser = argparse.ArgumentParser(
-        description="Apply the GmSLM 5 kHz high-pass + noise gate to a WAV file and resample to 16 kHz."
-    )
-    parser.add_argument("input", help="Input audio file (any rate/channels; mixed to mono).")
-    parser.add_argument("output", help="Output WAV path.")
-    parser.add_argument("--cutoff", type=float, default=5_000.0, help="High-pass cutoff in Hz (default 5000).")
-    parser.add_argument("--order", type=int, default=5, help="Butterworth order (default 5).")
-    parser.add_argument("--target-sr", type=int, default=16_000, help="Output sample rate (default 16000).")
-    parser.add_argument("--gate", action="store_true", help="Also attenuate frames classified as noise.")
-    parser.add_argument("--attenuation-db", type=float, default=40.0)
-    args = parser.parse_args(argv)
-
-    import soundfile as sf
-
-    cfg = PreprocessingConfig(
-        highpass_cutoff_hz=args.cutoff, highpass_order=args.order, target_sample_rate=args.target_sr
-    )
-    audio, sr = _read_audio(args.input)
-    out, act = preprocess_waveform(audio, sr, cfg)
-    if args.gate:
-        out, _ = noise_gate(out, args.target_sr, cfg, args.attenuation_db, activity=act)
-    sf.write(args.output, out, args.target_sr)
-    print(
-        f"{args.input}: {len(audio) / sr:.1f}s @ {sr} Hz -> {args.output} @ {args.target_sr} Hz; "
-        f"vocal-active frames: {act.active.mean():.1%}"
-    )
-
-
-if __name__ == "__main__":
-    main()
