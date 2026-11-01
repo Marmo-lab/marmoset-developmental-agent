@@ -98,13 +98,14 @@ def test_learned_features_refuse_the_wrong_rate_or_shape(cfg: PreprocessingConfi
         learned_features(_clip()[None], SR, cfg)
 
 
-def test_learned_yamls_are_the_learned_preset() -> None:
+def test_learned_is_the_default_and_the_corpus_yaml_adds_only_night() -> None:
     from marmoset_developmental_agent.config.agent_config import load_config
 
     root = Path(__file__).resolve().parents[1] / "config"
-    assert load_config(root / "learned.yaml").preprocessing == PreprocessingConfig.learned()
-    day = dataclasses.replace(PreprocessingConfig.learned(), exclude_night=True)
-    assert load_config(root / "corpus_day_learned.yaml").preprocessing == day
+    assert PreprocessingConfig() == PreprocessingConfig.learned()
+    assert PreprocessingConfig().frame_features == "learned"
+    day = dataclasses.replace(PreprocessingConfig(), exclude_night=True)
+    assert load_config(root / "corpus_day.yaml").preprocessing == day
 
 
 def test_shipped_checkpoint_matches_the_preset() -> None:

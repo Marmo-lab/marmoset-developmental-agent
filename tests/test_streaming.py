@@ -72,8 +72,8 @@ def test_file_and_array_sources_give_identical_calls(wav):
 def test_blocks_find_the_same_calls_as_one_block_and_never_split_or_duplicate(wav):
     """Calls straddling a block edge are kept once, whole, with the same boundaries."""
     src = FileSource(str(wav))
-    whole = detect_recording(src, START, dataclasses.replace(PreprocessingConfig(), stream_block_s=1_000.0))
-    blocked = detect_recording(src, START, dataclasses.replace(PreprocessingConfig(), stream_block_s=4.0))
+    whole = detect_recording(src, START, dataclasses.replace(PreprocessingConfig.spectral(), stream_block_s=1_000.0))
+    blocked = detect_recording(src, START, dataclasses.replace(PreprocessingConfig.spectral(), stream_block_s=4.0))
     assert len(blocked) == len(whole) == len(CALLS)
     for a, b in zip(whole, blocked):
         assert a.start_s == pytest.approx(b.start_s, abs=0.03)

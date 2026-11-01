@@ -1,5 +1,8 @@
-# Corpus build, day audio only: the production defaults plus night exclusion.
-#   tools/corpus/detect_corpus.py ... --config config/corpus_day.yaml --export-audio
+# Corpus build, day audio only: the production defaults (learned detector) plus night exclusion.
+#   tools/corpus/detect_corpus.py ... --config config/corpus_day.yaml --export-calls
+# The production run v3_calls used the identical config/corpus_day_learned.yaml (since folded in
+# here); v2_day used this file when the spectral rule detector was the default (its run_config.yaml
+# records every value).
 # Night (19:00-06:00) holds almost no calls: 0 in the 6 labelled night clips, and 0-18 calls per
 # audio-hour between 19:00 and 05:00 in the 45-recording pilot against 350-1660 by day
 # (SESSION_STATE, item C). Recordings lying entirely at night are skipped without being read.

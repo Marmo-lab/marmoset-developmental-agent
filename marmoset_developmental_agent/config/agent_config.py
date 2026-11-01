@@ -57,7 +57,10 @@ class PreprocessingConfig:
     # 10-12 kHz). [talia] ran on librosa's default 22050 Hz resample, which caps Nyquist
     # at 11025 Hz, flush against max_bandwidth_hz below; :meth:`talia` restores it.
     detection_sample_rate: int = 48_000
-    highpass_cutoff_hz: float = 5_000.0  # [paper] + [talia], exact agreement
+    # [ours] 1 kHz for the learned detector, so the classifier sees cage noise's low-frequency
+    # energy (DETECTOR_EVAL finding 12). [paper] + [talia] 5 kHz, exact agreement; :meth:`talia`
+    # and :meth:`spectral` restore it.
+    highpass_cutoff_hz: float = 1_000.0
     highpass_order: int = 5  # [talia] order 5, zero-phase -> effective order 10
     n_fft: int = 2048  # [paper]; [talia] librosa default, never set explicitly
     hop_length: int = 512  # [paper]; [talia] librosa default
@@ -67,12 +70,15 @@ class PreprocessingConfig:
     highpass_training_audio: bool = False
 
     # Which per-frame feature set drives detection.
-    #   "spectral" -- our noise-floor + density + variance + tonality detector, chosen on
-    #                 the pre-registered held-out test (DETECTOR_EVAL: P 0.80 / R 0.79,
-    #                 chunk P 0.94 / chunk R 0.92). The production default.
+    #   "learned"  -- a frame classifier trained on the hand labels (preprocessing/
+    #                 learned_detector.py). The production default since 2026-11-01: on the
+    #                 untouched blind test set P 0.94 / R 0.93 against the rule detector's
+    #                 0.84 / 0.96 at more splits and false alarms (DETECTOR_EVAL finding 14).
+    #   "spectral" -- our noise-floor + density + variance + tonality + harmonic rule
+    #                 detector, the reference before it; use :meth:`spectral`.
     #   "talia"    -- faithful port of segment_processor.py (freq_range / bandwidth), for
     #                 the GmSLM comparison arm and the port gate; use :meth:`talia`.
-    frame_features: Literal["talia", "spectral", "learned"] = "spectral"
+    frame_features: Literal["talia", "spectral", "learned"] = "learned"
 
     # --- "talia" feature path (segment_processor.py, read from source) ------------ #
     amp_threshold: float = 0.02  # [talia] AMP_THRESHOLD on librosa |STFT|
@@ -135,7 +141,8 @@ class PreprocessingConfig:
     # (with the 0.15 s / 8 s limits below: R 0.94 -> 0.95, call-time R 0.79 -> 0.90, P 0.82
     # -> 0.80); looser values add broadband false alarms, at night too. f0 range covers the
     # labelled lowest bands; +-2 bins (+-47 Hz at 48 kHz / 2048) absorbs FM smear.
-    harmonic_min_contrast_db: Optional[float] = 10.0  # [ours]
+    # Off by default (unused by the learned detector); :meth:`spectral` sets 10 dB.
+    harmonic_min_contrast_db: Optional[float] = None  # [ours]
     harmonic_f0_min_hz: float = 4_000.0  # [ours]
     harmonic_f0_max_hz: float = 12_000.0  # [ours]
     harmonic_f0_step_hz: float = 25.0  # [ours]
@@ -162,9 +169,11 @@ class PreprocessingConfig:
     learned_split_max_gap_s: float = 0.3  # [ours]
 
     # --- shared run grouping and duration limits -------------------------------- #
-    # [talia] Gaps <= 4 frames between active frames are bridged into one call
-    # (find_consecutive_series splits where diff > 4).
-    merge_gap_s: float = 0.0929
+    # [ours] The learned classifier decides what a call is, so only 50 ms gaps are closed.
+    # [talia] Gaps <= 4 frames (0.0929 s) between active frames are bridged into one call
+    # (find_consecutive_series splits where diff > 4); :meth:`talia` and :meth:`spectral`
+    # restore it.
+    merge_gap_s: float = 0.05
     # [talia] find_consecutive_series drops groups with <= 2 *members*. A count of
     # active frames, not a duration, so it is not stored in seconds.
     min_run_members: int = 3
@@ -175,8 +184,10 @@ class PreprocessingConfig:
     # floor missed 56% of the labelled 0.2-0.3 s calls, and with the harmonic test the
     # pulsed stacks join into runs longer than 4 s, which the 4 s ceiling then discarded whole.
     # Held-out, with both and the harmonic test: R 0.79 -> 0.93, call-time R 0.65 -> 0.85,
-    # P 0.80 -> 0.78, chunk P 0.94 -> 0.94, chunk R 0.92 -> 0.99.
-    min_call_duration_s: float = 0.15  # [ours]
+    # P 0.80 -> 0.78, chunk P 0.94 -> 0.94, chunk R 0.92 -> 0.99; :meth:`spectral` keeps 0.15 s.
+    # [ours] 0.05 s for the learned detector, which only drops stray runs; its short false
+    # alarms are flagged later (merge_calls.py, short_low_conf).
+    min_call_duration_s: float = 0.05
     max_call_duration_s: float = 8.0  # [ours]
 
     # --- channels and streaming [ours] ------------------------------------------ #
@@ -237,20 +248,22 @@ class PreprocessingConfig:
         unfiltered mean as training audio. Only these fields differ from the production
         defaults; the "spectral" fields are unused on this path.
         """
-        return cls(frame_features="talia", detection_sample_rate=22_050, spectral_max_freq_hz=None,
-                   detection_channel_strategy="mean", training_channel_strategy="mean",
-                   min_call_duration_s=0.2322, max_call_duration_s=4.0, harmonic_min_contrast_db=None)
+        return cls(frame_features="talia", detection_sample_rate=22_050, highpass_cutoff_hz=5_000.0,
+                   spectral_max_freq_hz=None, detection_channel_strategy="mean", training_channel_strategy="mean",
+                   merge_gap_s=0.0929, min_call_duration_s=0.2322, max_call_duration_s=4.0)
+
+    @classmethod
+    def spectral(cls) -> "PreprocessingConfig":
+        """The harmonic rule detector, production default until 2026-11-01 (DETECTOR_EVAL
+        finding 11): 5 kHz high-pass, 4-frame gap bridging, 0.15 s floor, harmonic test on."""
+        return cls(frame_features="spectral", highpass_cutoff_hz=5_000.0, merge_gap_s=0.0929,
+                   min_call_duration_s=0.15, harmonic_min_contrast_db=10.0)
 
     @classmethod
     def learned(cls) -> "PreprocessingConfig":
-        """The learned call detector (DETECTOR_EVAL finding 12), with its post-processing.
-
-        High-pass at 1 kHz rather than 5 kHz, so the classifier sees cage noise's
-        low-frequency energy. The classifier decides what a call is, so the run grouping
-        only closes 50 ms gaps and drops runs under 50 ms. The 8 s ceiling is kept.
-        """
-        return cls(frame_features="learned", highpass_cutoff_hz=1_000.0, merge_gap_s=0.05,
-                   min_call_duration_s=0.05, harmonic_min_contrast_db=None)
+        """The learned call detector (DETECTOR_EVAL findings 12, 14): now the defaults
+        themselves; kept so scripts that name it explicitly read clearly."""
+        return cls()
 
     def hop_s(self) -> float:
         """Seconds per STFT frame at the detection rate."""

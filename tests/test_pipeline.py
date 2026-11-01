@@ -346,7 +346,7 @@ def _tone_burst(
 
 @pytest.mark.parametrize("features", ["talia", "spectral"])
 def test_both_feature_paths_detect_a_tone_burst(features):
-    p = PreprocessingConfig.talia() if features == "talia" else PreprocessingConfig()
+    p = PreprocessingConfig.talia() if features == "talia" else PreprocessingConfig.spectral()
     wav = _tone_burst(48_000, dur_s=1.0, freq_hz=7_000, onset_s=1.0, total_s=3.0)
     audio_16k, activity = preprocess_waveform(wav, 48_000, p)
     assert audio_16k.dtype == np.float32
@@ -367,7 +367,7 @@ def test_talia_path_populates_its_features_and_spectral_path_does_not():
     assert talia.freq_range_hz is not None and talia.bandwidth_bins is not None
     assert talia.density is None and talia.variance_db2 is None
     assert talia.bandwidth_bins.max() > 0
-    spectral = preprocess_waveform(wav, 48_000, PreprocessingConfig())[1]
+    spectral = preprocess_waveform(wav, 48_000, PreprocessingConfig.spectral())[1]
     assert spectral.density is not None and spectral.variance_db2 is not None
     assert spectral.freq_range_hz is None
     assert talia.tonal is None and spectral.tonal is not None
@@ -384,7 +384,7 @@ def test_spectral_detector_sees_high_calls_only_at_a_higher_rate():
     wav = _tone_burst(48_000, dur_s=0.8, freq_hz=13_000, onset_s=1.0, total_s=3.0, noise=1e-3, amplitude=0.05)
 
     def calls(**kw):
-        p = PreprocessingConfig(**kw)
+        p = dataclasses.replace(PreprocessingConfig.spectral(), **kw)
         return activity_to_calls(preprocess_waveform(wav, 48_000, p)[1], p)
 
     assert not calls(detection_sample_rate=22_050, spectral_max_freq_hz=None)
@@ -405,7 +405,7 @@ def test_tonality_rejection_keeps_an_fm_call_and_drops_band_noise():
     wav[int(2.5 * sr):int(2.5 * sr) + n] += (0.003 * burst / burst.std()).astype(np.float32)
 
     def mids(**kw):
-        p = PreprocessingConfig(**kw)
+        p = dataclasses.replace(PreprocessingConfig.spectral(), **kw)
         return sorted(round((c.start_s + c.end_s) / 2) for c in activity_to_calls(preprocess_waveform(wav, sr, p)[1], p))
 
     assert mids(min_tonal_fraction=None) == [1, 3]
@@ -433,7 +433,7 @@ def test_harmonic_stack_survives_the_density_cap_and_broadband_noise_does_not():
     wav[3 * sr:3 * sr + n] += (0.02 * burst / burst.std()).astype(np.float32)
 
     def mids(**kw):
-        p = PreprocessingConfig(**kw)
+        p = dataclasses.replace(PreprocessingConfig.spectral(), **kw)
         act = preprocess_waveform(wav, sr, p)[1]
         return sorted(round((c.start_s + c.end_s) / 2 * 2) / 2 for c in activity_to_calls(act, p))
 

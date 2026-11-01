@@ -120,6 +120,14 @@ Already landed and verified on real cluster data:
 S4.1 says it does not). It is still correctly rejected, on rate (250 kHz) and channel
 count (1), not on the missing timestamp.
 
+### 2026-11-01
+
+- **The learned detector is the production default:** `PreprocessingConfig()` is `learned()`. The rule detector
+  is `PreprocessingConfig.spectral()`, and `talia()` is unchanged. All three presets were checked field by field
+  against their earlier values. `config/learned.yaml` and `config/corpus_day_learned.yaml` are folded into the
+  defaults and `config/corpus_day.yaml`.
+- Superseded listening tools removed; `call_library.py` replaces them.
+
 ### Latest (2026-10-26; supersedes everything below where they conflict)
 
 **Corpus `v3_calls` is complete** (job 64257082; learned detector v1, `config/corpus_day_learned.yaml --export-calls`).

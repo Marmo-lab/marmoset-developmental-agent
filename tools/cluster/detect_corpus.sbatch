@@ -9,10 +9,10 @@
 #   # production (v3_calls): full corpus, day only, learned detector, each recording's calls as one
 #   # 48 kHz FLAC. 136 tasks of ~20 recordings, at most 16 at once (shared file system)
 #   RUN=v3_calls sbatch -o ~/marmoset_work/logs/%x-%A_%a.out --array=0-135%16 tools/cluster/detect_corpus.sbatch \
-#       --n-tasks 136 --config config/corpus_day_learned.yaml --export-calls
+#       --n-tasks 136 --config config/corpus_day.yaml --export-calls
 #   # then, on a compute node: merge into calls.tsv, then clean (clean_corpus.sbatch)
 #   python tools/corpus/merge_calls.py $WORK_DIR/corpus/$RUN
-#   # GmSLM comparison arm (v2_day): --config config/corpus_day.yaml --export-audio, then merge_corpus.py
+#   # GmSLM comparison arm: --config config/gmslm_arm.yaml --export-audio, then merge_corpus.py
 #
 #SBATCH --job-name=detect-corpus
 #SBATCH --partition=elscn.q

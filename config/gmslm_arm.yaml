@@ -5,9 +5,10 @@
 preprocessing:
   frame_features: talia            # faithful port of segment_processor.py (port gate: 23/23, IoU 1.00)
   detection_sample_rate: 22050     # librosa's default resample
+  highpass_cutoff_hz: 5000.0       # [GmSLM] + [talia]
   spectral_max_freq_hz: null       # unused on the talia path
   detection_channel_strategy: mean # librosa's mono mixdown
   training_channel_strategy: mean
+  merge_gap_s: 0.0929              # 4 frames
   min_call_duration_s: 0.2322      # 10 frames at 22050 Hz
   max_call_duration_s: 4.0
-  harmonic_min_contrast_db: null   # ours; not in her detector
