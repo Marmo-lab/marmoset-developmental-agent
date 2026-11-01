@@ -290,6 +290,8 @@ clips have no calls. The run used a checkout of the frozen commit 8d815bb, the m
   are unbiased (signed median +3 ms), but the detector ends calls earlier than the labels (signed median −41 ms).
   The faint tail of a call that the labeller still sees is lost below the detection threshold. This bias is
   systematic, so it can be corrected in v2. It is not corrected in this report.
+  The labeller, shown this (2026-11-01), leans toward the detector's earlier ends. That is a reason to tighten
+  the labelling rule for offsets rather than to shift the detector's offsets later.
 - **Label granularity.** The user labelled calls that were touching or nearly so as one call (2026-11-01), and the
   importer merges gaps under 0.1 s (it merged 24 labels in ts_08–ts_15). The user also notes that hand edges are
   imprecise. The split and merge counts and the edge errors are therefore partly a matter of labelling granularity
