@@ -1,8 +1,0 @@
-# Audit runs (2026-11-02): the production defaults with no call-length ceiling and no night exclusion.
-#   tools/corpus/detect_corpus.py ... --config config/audit_no_ceiling.yaml --only PATHS.txt
-# Used to count what max_call_duration_s (8 s) drops, by diffing against v3_calls on the same day
-# recordings, and to see what the detector finds in the night audio the corpus skips.
-
-preprocessing:
-  max_call_duration_s: 1000000.0  # effectively none
-  exclude_night: false

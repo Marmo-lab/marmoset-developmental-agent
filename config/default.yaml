@@ -59,7 +59,7 @@ preprocessing:                     # [GmSLM] A.1-A.2, reconciled with [talia] vi
   merge_gap_s: 0.05               # [ours] learned; talia / spectral presets 0.0929 (4 frames)
   min_run_members: 3               # groups need > 2 member frames
   min_call_duration_s: 0.05       # [ours] learned; spectral preset 0.15, talia preset 0.2322 (10 frames)
-  max_call_duration_s: 8.0        # [ours]; talia preset 4.0
+  max_call_duration_s: null       # [ours] no ceiling (long calls flagged in merge_calls); spectral 8.0, talia 4.0
   # channels and streaming (ours)
   detection_channel_strategy: mean            # capsules -> detection signal (second-order; held-out used mean)
   training_channel_strategy: ambisonic_beam   # capsules -> training audio (+2.45 dB call-band range by day)

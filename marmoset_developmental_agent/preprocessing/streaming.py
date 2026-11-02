@@ -4,10 +4,12 @@ and chunk audio read back from the raw file.
 Why blocks. A raw colony file is 48 kHz, 4 capsules, ~62 min: 2.9 GB as float32. The
 detector therefore runs on blocks of ``stream_block_s`` (60 s), each read with
 ``stream_context_s`` (5 s) of extra audio on both sides, and a call is kept by the block
-whose *core* holds its onset. The context is longer than the longest call (4 s), so a call
-is never cut at a block edge, and it absorbs the high-pass filter's edge transient. Calls
-that two blocks both report (an onset that moves across a core edge between them) are
-merged. The block length also fixes the spectral detector's noise-floor window (a per-bin
+whose *core* holds its onset. The context absorbs the high-pass filter's edge transient,
+and a call shorter than it is never cut at a block edge. A longer call (the learned
+detector has no length ceiling) can run past the end of its block's read window; the next
+block, which reads from before its own core, sees the rest of it as a call with an onset in
+its left context, and that piece extends the cut call instead of being dropped. Calls that
+two blocks both report (an onset that moves across a core edge between them) are merged. The block length also fixes the spectral detector's noise-floor window (a per-bin
 median over ~70 s), which is close to the 64 s clips it was evaluated on
 (docs/DETECTOR_EVAL.md), so the evaluated numbers apply to this path.
 
@@ -28,6 +30,7 @@ combination and goes through the same code via :class:`ArraySource`.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import math
 from dataclasses import dataclass
@@ -235,17 +238,30 @@ def detect_recording(src: AudioSource, start_time: dt.datetime, cfg: Preprocessi
     ctx = int(round(cfg.stream_context_s * sr))
     channel = best_channel(src, cfg.detection_channel_strategy)
     found: List[CallRecord] = []
+    cut: List[int] = []  # calls in ``found`` that reached the end of the previous block's read window
     for s0 in range(0, src.frames, core):
         a, b = max(0, s0 - ctx), min(src.frames, s0 + core + ctx)
         block = src.read(a, b - a)
         core_lo, core_hi = s0 / sr, min(s0 + core, src.frames) / sr
+        still_cut: List[int] = []
         for x in _signals(block, cfg.detection_channel_strategy, sr, channel):
             activity = detection_activity(x, sr, cfg)
+            tol = cfg.boundary_pad_s + 2 * activity.hop_s
             for c in activity_to_calls(activity, cfg):
-                onset = a / sr + c.start_s
+                onset, end = a / sr + c.start_s, a / sr + c.end_s
+                reaches_end = b < src.frames and end >= b / sr - tol
                 if core_lo <= onset < core_hi:
-                    found.append(CallRecord(onset, a / sr + c.end_s, start_time + dt.timedelta(seconds=onset),
+                    found.append(CallRecord(onset, end, start_time + dt.timedelta(seconds=onset),
                                             *_features(activity, c, cfg)))
+                    if reaches_end:
+                        still_cut.append(len(found) - 1)
+                elif onset < core_lo:
+                    for i in cut:  # the rest of a call cut at the previous read window's end
+                        if found[i].start_s < end and onset < found[i].end_s and end > found[i].end_s:
+                            found[i] = dataclasses.replace(found[i], end_s=end)
+                            if reaches_end:
+                                still_cut.append(i)
+        cut = still_cut
     calls = _merge_overlapping(found)
     if cfg.exclude_night:
         calls = [r for r in calls if not in_night_window(r.start_time, cfg)]

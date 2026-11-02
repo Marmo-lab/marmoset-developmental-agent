@@ -128,6 +128,21 @@ count (1), not on the missing timestamp.
   defaults and `config/corpus_day.yaml`.
 - Superseded listening tools removed; `call_library.py` replaces them.
 
+### 2026-11-02
+
+- **Phee database score** (DETECTOR_EVAL finding 15): recall 0.997 on 5,817 phees; by ear the detector's ends are
+  the more accurate ones.
+- **Night audit** (`RUN=night_sample`, one all-night recording per night, 115 nights, 119 h): 472 calls, 4 per hour
+  against ~1,800 per hour by day; 28 of 115 nights have any call; 373 of the 472 fall at 19-20 h and 04-05 h, the
+  edges of the night window. The user decided to include night audio in the corpus.
+- **Long-call audit** (`RUN=day_longcheck`, the busiest recording per date, 135 recordings, 140 h, no ceiling): the 8 s
+  ceiling had dropped 202 calls of 8-28 s (median 9.7 s) in 64 recordings, confidence 0.97-0.99, SNR 25-40 dB, peak
+  8-12 kHz, mostly late July-August; 0.6 of 56.6 call-hours. Their audio: `RUN=day_long_audio`.
+- **Decisions (user):** no length ceiling, long calls flagged `long` (`merge_calls.py`) and kept for training; night
+  audio included. Defaults now: `max_call_duration_s=None`, `exclude_night=False`. Streaming fix: a call longer
+  than the 5 s context is extended across block edges (it was cut at the read window's end).
+- **`RUN=v4_calls`**: the full corpus, day and night, with these defaults.
+
 ### Latest (2026-10-26; supersedes everything below where they conflict)
 
 **Corpus `v3_calls` is complete** (job 64257082; learned detector v1, `config/corpus_day_learned.yaml --export-calls`).

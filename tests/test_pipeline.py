@@ -217,7 +217,8 @@ def test_dataset_chronological_and_chunk_shapes(dataset, cfg):
     for c in dataset.chunks:
         assert c.audio().shape == (CHUNK,) and c.sample_rate == SR
         for call in c.calls:
-            assert cfg.preprocessing.min_call_duration_s <= call.duration_s <= cfg.preprocessing.max_call_duration_s
+            assert cfg.preprocessing.min_call_duration_s <= call.duration_s <= (cfg.preprocessing.max_call_duration_s
+                                                                                 or float("inf"))
             assert 0 <= call.start_s < call.end_s <= 10.0
 
 
@@ -358,7 +359,7 @@ def test_both_feature_paths_detect_a_tone_burst(features):
     assert best.start_s == pytest.approx(1.0, abs=0.15)
     assert best.end_s == pytest.approx(2.0, abs=0.15)
     for c in calls:
-        assert p.min_call_duration_s <= c.duration_s <= p.max_call_duration_s
+        assert p.min_call_duration_s <= c.duration_s <= (p.max_call_duration_s or float("inf"))
 
 
 def test_talia_path_populates_its_features_and_spectral_path_does_not():

@@ -184,11 +184,14 @@ class PreprocessingConfig:
     # floor missed 56% of the labelled 0.2-0.3 s calls, and with the harmonic test the
     # pulsed stacks join into runs longer than 4 s, which the 4 s ceiling then discarded whole.
     # Held-out, with both and the harmonic test: R 0.79 -> 0.93, call-time R 0.65 -> 0.85,
-    # P 0.80 -> 0.78, chunk P 0.94 -> 0.94, chunk R 0.92 -> 0.99; :meth:`spectral` keeps 0.15 s.
+    # P 0.80 -> 0.78, chunk P 0.94 -> 0.94, chunk R 0.92 -> 0.99; :meth:`spectral` keeps 0.15 s / 8 s.
     # [ours] 0.05 s for the learned detector, which only drops stray runs; its short false
-    # alarms are flagged later (merge_calls.py, short_low_conf).
+    # alarms are flagged later (merge_calls.py, short_low_conf). [ours] No ceiling for it (None):
+    # an 8 s ceiling silently dropped 202 calls of 8-28 s in 140 h of busy day audio, at
+    # confidence 0.97-0.99 and SNR 25-40 dB (2026-11-02 audit, SESSION_STATE); they are
+    # flagged ``long`` in merge_calls.py instead.
     min_call_duration_s: float = 0.05
-    max_call_duration_s: float = 8.0  # [ours]
+    max_call_duration_s: Optional[float] = None
 
     # --- channels and streaming [ours] ------------------------------------------ #
     # How the four capsules become the signal detection runs on, and the signal the
@@ -255,9 +258,9 @@ class PreprocessingConfig:
     @classmethod
     def spectral(cls) -> "PreprocessingConfig":
         """The harmonic rule detector, production default until 2026-11-01 (DETECTOR_EVAL
-        finding 11): 5 kHz high-pass, 4-frame gap bridging, 0.15 s floor, harmonic test on."""
+        finding 11): 5 kHz high-pass, 4-frame gap bridging, 0.15-8 s calls, harmonic test on."""
         return cls(frame_features="spectral", highpass_cutoff_hz=5_000.0, merge_gap_s=0.0929,
-                   min_call_duration_s=0.15, harmonic_min_contrast_db=10.0)
+                   min_call_duration_s=0.15, max_call_duration_s=8.0, harmonic_min_contrast_db=10.0)
 
     @classmethod
     def learned(cls) -> "PreprocessingConfig":

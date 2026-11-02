@@ -220,13 +220,16 @@ def test_merge_builds_a_chronological_manifest_and_drops_duplicate_copies(wav, t
     assert ds.chunks[0].audio().shape == (160_000,) and ds.chunks[0].calls
 
 
-def test_call_quality_flags_only_short_low_confidence_calls():
+def test_call_quality_flags_short_low_confidence_and_long_calls():
     from tools.corpus.merge_calls import quality
 
     assert quality({"duration_s": "0.12", "confidence": "0.50"}) == "short_low_conf"
     assert quality({"duration_s": "0.12", "confidence": "0.90"}) == "ok"
     assert quality({"duration_s": "0.40", "confidence": "0.50"}) == "ok"
     assert quality({"duration_s": "0.12", "confidence": "nan"}) == "ok"
+    assert quality({"duration_s": "7.99", "confidence": "0.99"}) == "ok"
+    assert quality({"duration_s": "8.00", "confidence": "0.99"}) == "long"
+    assert quality({"duration_s": "28.4", "confidence": "0.30"}) == "long"
 
 
 def test_merge_calls_builds_one_chronological_call_corpus(wav, tmp_path):
@@ -289,3 +292,25 @@ def test_clean_corpus_writes_an_aligned_cleaned_copy_of_the_call_audio(wav, tmp_
         # the call's energy is kept (the synthetic call is 30 dB above the noise); levels, not
         # samples, are compared because the catalogue's 0.1 ms rounding may shift a slice by a few samples
         assert 0.8 < np.std(clean[body]) / np.std(orig[body]) < 1.2
+
+
+@pytest.mark.parametrize("preset", ["learned", "spectral"])
+def test_a_call_longer_than_the_context_is_not_cut_at_a_block_edge(preset):
+    """With no length ceiling a call can outrun its block's read window (core + context);
+    the next block's view of the rest must extend it, as one long block would see it."""
+    rng = np.random.default_rng(1)
+    x = 1e-3 * rng.standard_normal(30 * SR)
+    onset, dur = 9.0, 3.5  # block 0 reads 0-11 s here, so the call is cut at 11 s
+    m = int(dur * SR)
+    x[int(onset * SR):int(onset * SR) + m] += 0.05 * signal.chirp(np.arange(m) / SR, 9_000, dur, 7_000)
+    base = PreprocessingConfig() if preset == "learned" else PreprocessingConfig.spectral()
+    cfg = dataclasses.replace(base, max_call_duration_s=None, stream_context_s=1.0)
+    src = ArraySource(x.astype(np.float32), SR)
+    whole = detect_recording(src, START, dataclasses.replace(cfg, stream_block_s=1_000.0))
+    blocked = detect_recording(src, START, dataclasses.replace(cfg, stream_block_s=10.0))
+    long_whole = [r for r in whole if r.duration_s > 2]
+    long_blocked = [r for r in blocked if r.duration_s > 2]
+    assert len(long_whole) == len(long_blocked) == 1
+    assert long_blocked[0].start_s == pytest.approx(long_whole[0].start_s, abs=0.03)
+    assert long_blocked[0].end_s == pytest.approx(long_whole[0].end_s, abs=0.1)  # block-wise noise floors differ
+    assert long_blocked[0].end_s > 11.5  # past the first read window

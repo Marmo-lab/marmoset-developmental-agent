@@ -3,7 +3,8 @@
 Call detection groups consecutive vocal-active STFT frames (see ``filter_5khz.py``).
 Gaps up to ``merge_gap_s`` are bridged, so twitter syllables form one call; groups with
 fewer than ``min_run_members`` frames are dropped; a group survives only if its unpadded
-frame span lies strictly inside (``min_call_duration_s``, ``max_call_duration_s``) and it
+frame span lies strictly inside (``min_call_duration_s``, ``max_call_duration_s``; no ceiling
+when that is None) and it
 passes the two shape rejections of Talia's ``filter_calls`` (or, on the spectral path, our
 tonality rejection); survivors are then padded by
 ``boundary_pad_s``. All of this is ported from her source, not the audit's summary. The paper's "calls are 0.25-4 s" is the rounded
@@ -184,7 +185,7 @@ def activity_to_calls(activity: FrameActivity, cfg: PreprocessingConfig) -> List
 
     As in her ``filter_calls`` / ``save_calls``: duration is tested on the unpadded frame
     span (``last - first``), strictly, against ``min_call_duration_s`` (10 frames) and
-    ``max_call_duration_s`` (4 s); only survivors are padded by ``boundary_pad_s``. The
+    ``max_call_duration_s`` (4 s; None = no ceiling); only survivors are padded by ``boundary_pad_s``. The
     call boundary is the first/last member's frame time. A learned model with edge heads
     first splits and refines the runs (:func:`_split_and_refine`).
     """
@@ -195,7 +196,8 @@ def activity_to_calls(activity: FrameActivity, cfg: PreprocessingConfig) -> List
         runs = _split_and_refine(runs, activity, cfg)
     for members in runs:
         span = int(members[-1] - members[0])
-        if not (span > floor and span * activity.hop_s < cfg.max_call_duration_s):
+        ceiling = cfg.max_call_duration_s
+        if not (span > floor and (ceiling is None or span * activity.hop_s < ceiling)):
             continue
         if _rejected_by_shape(members, activity, cfg):
             continue

@@ -6,10 +6,11 @@
 #   # pilot: the recordings behind the labelled clips (paths listed one per line)
 #   RUN=pilot sbatch -o ~/marmoset_work/logs/%x-%A_%a.out --array=0-3 tools/cluster/detect_corpus.sbatch \
 #       --n-tasks 4 --only ~/marmoset_work/manifests/pilot_paths.txt
-#   # production (v3_calls): full corpus, day only, learned detector, each recording's calls as one
-#   # 48 kHz FLAC. 136 tasks of ~20 recordings, at most 16 at once (shared file system)
-#   RUN=v3_calls sbatch -o ~/marmoset_work/logs/%x-%A_%a.out --array=0-135%16 tools/cluster/detect_corpus.sbatch \
-#       --n-tasks 136 --config config/corpus_day.yaml --export-calls
+#   # production (v4_calls): full corpus, day and night, learned detector with no length ceiling, each
+#   # recording's calls as one 48 kHz FLAC. 200 tasks of ~14 recordings, at most 24 at once (shared file system)
+#   RUN=v4_calls sbatch -o ~/marmoset_work/logs/%x-%A_%a.out --array=0-199%24 tools/cluster/detect_corpus.sbatch \
+#       --n-tasks 200 --export-calls
+#   # v3_calls (2026-10-26) was day only with an 8 s ceiling: --config config/corpus_day.yaml on the defaults of then
 #   # then, on a compute node: merge into calls.tsv, then clean (clean_corpus.sbatch)
 #   python tools/corpus/merge_calls.py $WORK_DIR/corpus/$RUN
 #   # GmSLM comparison arm: --config config/gmslm_arm.yaml --export-audio, then merge_corpus.py
