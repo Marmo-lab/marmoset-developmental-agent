@@ -141,7 +141,15 @@ count (1), not on the missing timestamp.
 - **Decisions (user):** no length ceiling, long calls flagged `long` (`merge_calls.py`) and kept for training; night
   audio included. Defaults now: `max_call_duration_s=None`, `exclude_night=False`. Streaming fix: a call longer
   than the 5 s context is extended across block edges (it was cut at the read window's end).
-- **`RUN=v4_calls`**: the full corpus, day and night, with these defaults.
+- **`RUN=v4_calls`**: the full corpus, day and night, with these defaults. Done (job 66465770, 2719/2719, 0 errors; port gate
+  66465768 23/23 after the segmentation change). After `merge_calls`: **1,701,415 calls, 367.4 call-hours**, 2602
+  recordings, 137 dates (2021-05-03 to 2021-10-12); day 1,688,331 calls / 363.9 h, night (19-06 h) 13,084 / 3.4 h;
+  1,438 `long` (4.1 h), 63,592 `short_low_conf`; training 365.0 call-hours. `call_audio/` 130 G. v4 replaces v3 as
+  the production corpus (`~/marmoset_work/corpus/v4_calls/`); not yet cleaned (`clean_corpus.py`).
+- **Size against 1kD** (Raviv ... Hasson, bioRxiv 2026.03.28.715023): 1,900-6,600 h of speech audio per child over a
+  median 960 days, 3-7.5 h/day; ours is ~2.7 call-hours/day for the whole colony over 137 dates, i.e. 5-18x less
+  than one child. The GmSLM-sized decoder (12 x 1024, ~150 M params) is large for ~65 M DinoSR tokens; a smaller
+  decoder is the suggested start (open, not decided).
 
 ### Latest (2026-10-26; supersedes everything below where they conflict)
 
