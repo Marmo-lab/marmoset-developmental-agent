@@ -1,11 +1,10 @@
 """Score the call detector against the lab's phee database: a phee-only, out-of-domain check.
 
-The lab's phee database (``Omer-Lab-Shared/data/analysis/phee_database/pheeDB_*.csv``; the newest,
-``pheeDB_15122024_164547.csv``, holds the two-monkey experiments only and contains every phee of
-the January 2024 snapshot plus 947 more;
-columns explained in ``Data base.txt`` there) lists ~75,000 phee calls from the
-two-monkey and artificial-marmoset experiments, each with its experiment recording
-(``expWavFile``), the caller's microphone channel and ``OnsetMS`` / ``OffsetMS``. This
+The lab's phee database (``Omer-Lab-Shared/data/analysis/phee_database/pheeDB_*.csv``, columns
+explained in ``Data base.txt`` there) lists phee calls from the two-monkey and artificial-marmoset
+experiments, each with its experiment recording (``expWavFile``), the caller's microphone channel and
+``OnsetMS`` / ``OffsetMS``. The newest snapshot, ``pheeDB_15122024_164547.csv``, holds the two-monkey
+experiments only (46,100 phees: every phee of the January 2024 snapshot plus 947 more). This
 gives a second, much larger reference than our hand labels, with three limits that set
 what the score can mean:
 

@@ -310,3 +310,33 @@ clips have no calls. The run used a checkout of the frozen commit 8d815bb, the m
     here.
 - **Per protocol,** the test labels may now join training (v2), but v2 cannot be evaluated on them. A v2 claim needs
   new clips; `labeling/train2` is for training, because it was cut around detections, so it cannot serve as that test.
+
+## Finding 15: phee recall on the lab's phee database (2026-11-02)
+
+`tools/analysis/score_phee.py` (detect on the cluster with `tools/cluster/score_phee.sbatch`, job 66417325;
+report locally). Reference: `Omer-Lab-Shared/data/analysis/phee_database/pheeDB_15122024_164547.csv`, the newest
+snapshot (two-monkey experiments only, 46,100 phees). 30 of 240 experiments with audio, seeded sample (seed
+20261101): 5,817 phees, 29.7 h. Detector: the production default (learned v1), on the caller's channel.
+
+What this score can and cannot say:
+- **Phee only:** other call types are not listed, so precision is not defined. Detections overlapping no listed
+  phee are reported per minute as an upper bound on false alarms.
+- **Out of domain:** two monkeys in separate rooms, a close microphone each, 96 kHz stereo. The detector was trained
+  only on the colony room's 48 kHz four-capsule recorder.
+- **Reference is a detector:** the database's onsets and offsets are "as found in the detection" (`Data base.txt`),
+  not hand marks.
+
+Results (95% bootstrap intervals over experiments):
+- **Recall 0.997** [0.993, 0.999] by overlap. 99.5% or more in every experiment but one (0.95). Recall by phee
+  duration: 0.985 for 0.5–1 s, 0.998 for 1–2 s, 1.000 above 2 s. `short_low_conf` changes nothing here.
+- **Segmentation differs by definition.** 61% of phees are matched one-to-one, 37% are merged with a neighbour,
+  2% split. The merged phees are separated by a median gap of 0.26 s (p95 0.52 s), while consecutive phees on a
+  channel are a median 12 s apart. The database lists the syllables of a multi-syllable phee as separate phees;
+  the detector, trained on labels that treat a sequence of notes as one call, joins them. Hence R@IoU.5 is 0.60
+  [0.49, 0.70].
+- **Edges:** onsets agree (detector a median 40-52 ms earlier). Offsets do not: the detector ends a median 0.36 s
+  later (p10 0.25 s, p90 0.70 s) on single-phee matches, so detected phees last 2.05 s against 1.55 s. On the
+  colony test set it ends 41 ms *earlier* than the hand labels (finding 14), so this is either the experiment rooms'
+  reverberation or the database detector stopping early. Not yet decided by listening.
+- **Other detections:** 0.50 per channel-minute overlap no listed phee (0.25/min of them ≥ 0.5 s), and 1.29/min are
+  the other monkey's phees heard on this microphone.
