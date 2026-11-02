@@ -28,3 +28,13 @@ def test_phees_scored_on_their_own_channel_and_other_detections_sorted():
     assert round(s["onset_med_ms"]) == 260  # one-to-one onsets +20 and +500 ms
     dropped = _stats([score_exp(x, drop_short_low_conf=True)])
     assert dropped["unlisted_per_min"] == 0.5
+
+
+def test_listening_page_takes_only_one_to_one_matches():
+    from tools.analysis.listen_phee_edges import one_to_one
+
+    x = {"phees": [(1, 10.0, 11.0, "A"), (1, 11.2, 12.0, "A"), (1, 20.0, 21.0, "A"), (2, 30.0, 31.0, "B")],
+         "detections": {"1": [(9.9, 12.3, 0.9),                    # merges two phees: excluded
+                              (19.9, 21.4, 0.9)],                  # one-to-one
+                        "2": [(29.9, 30.4, 0.9), (30.5, 31.2, 0.9)]}}  # split: excluded
+    assert one_to_one(x) == [(1, (20.0, 21.0), (19.9, 21.4, 0.9))]
