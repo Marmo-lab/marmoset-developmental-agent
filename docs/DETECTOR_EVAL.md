@@ -337,6 +337,9 @@ Results (95% bootstrap intervals over experiments):
 - **Edges:** onsets agree (detector a median 40-52 ms earlier). Offsets do not: the detector ends a median 0.36 s
   later (p10 0.25 s, p90 0.70 s) on single-phee matches, so detected phees last 2.05 s against 1.55 s. On the
   colony test set it ends 41 ms *earlier* than the hand labels (finding 14), so this is either the experiment rooms'
-  reverberation or the database detector stopping early. Not yet decided by listening.
+  reverberation or the database detector stopping early. **Decided by listening (user, 2026-11-02):** on the
+  20-example page (`tools/analysis/listen_phee_edges.py`, one one-to-one phee per experiment), the detector's end
+  was the more accurate one in nearly all cases. The database's offsets end phees early, so the 0.36 s is mostly
+  the database's error, and IoU against it understates the detector.
 - **Other detections:** 0.50 per channel-minute overlap no listed phee (0.25/min of them ≥ 0.5 s), and 1.29/min are
   the other monkey's phees heard on this microphone.
