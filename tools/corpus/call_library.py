@@ -6,6 +6,9 @@ The page (``call_library.html``) lists calls with filters (date, duration, confi
 SNR, quality flag, cleaned only), plays each call as original and cleaned, draws both
 spectrograms on one scale, and records verdicts.
 
+``/map`` shows the call map of ``tools/analysis/call_map.py`` (``RUN/call_map/map.json``):
+click a point to hear it; names given to its clusters go to ``RUN/call_map/names.json``.
+
 Verdicts are appended to ``RUN/library_feedback.jsonl`` (one JSON object per click; the
 last one per call wins), so Claude can read them from the run directory.
 
@@ -209,6 +212,13 @@ def make_handler(lib_id: int, token: str):
             try:
                 if path in ("", "/index.html"):
                     self._send((HERE / "call_library.html").read_bytes(), "text/html; charset=utf-8")
+                elif path == "/map":
+                    self._send((HERE / "call_map.html").read_bytes(), "text/html; charset=utf-8")
+                elif path == "/api/map":
+                    self._send((lib.run / "call_map" / "map.json").read_bytes(), "application/json")
+                elif path == "/api/map_names":
+                    names = lib.run / "call_map" / "names.json"
+                    self._send(names.read_bytes() if names.exists() else b"{}", "application/json")
                 elif path == "/api/meta":
                     self._send(json.dumps(lib.meta()).encode(), "application/json")
                 elif path == "/api/calls":
@@ -225,6 +235,13 @@ def make_handler(lib_id: int, token: str):
 
         def do_POST(self) -> None:
             if self._ok() is None:
+                return
+            if urlparse(self.path).path == "/api/map_names":
+                names = {str(int(k)): str(v)[:80] for k, v in json.loads(self.rfile.read(
+                    int(self.headers.get("Content-Length", 0)))).items()}
+                with lib.lock:
+                    (lib.run / "call_map" / "names.json").write_text(json.dumps(names, ensure_ascii=False, indent=1))
+                self._send(b'{"ok":true}', "application/json")
                 return
             if urlparse(self.path).path != "/api/feedback":
                 self._send(b"not found", "text/plain", 404)
