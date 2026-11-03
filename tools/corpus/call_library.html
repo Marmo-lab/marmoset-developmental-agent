@@ -65,7 +65,7 @@ code{font-family:var(--mono);font-size:.8em;direction:ltr;unicode-bidi:isolate}
     <label>אורך מקס׳ (שנ׳)<input type="number" id="max_dur" step="0.05" min="0"></label>
     <label>ביטחון מינ׳<input type="number" id="min_conf" step="0.05" min="0" max="1"></label>
     <label>SNR מינ׳ (dB)<input type="number" id="min_snr" step="1"></label>
-    <label>איכות<select id="quality"><option value="">הכל</option><option value="ok">ok</option><option value="short_low_conf">short_low_conf</option></select></label>
+    <label>איכות<select id="quality"><option value="">הכל</option><option value="ok">ok</option><option value="short_low_conf">short_low_conf</option><option value="long">long</option></select></label>
     <label>המשוב שלי<select id="verdict"><option value="">הכל</option><option value="none">עוד לא סימנתי</option><option value="good">✓ טוב</option><option value="damaged">⚠ הניקוי פגע</option><option value="noise">✗ לא קריאה</option><option value="edges">↔ גבולות</option><option value="unsure">? לא בטוח</option></select></label>
     <label>מיון<select id="sort"><option value="time">לפי זמן</option><option value="random">אקראי</option><option value="snr_db">SNR</option><option value="confidence">ביטחון</option><option value="duration_s">אורך</option></select></label>
     <label>סדר<select id="desc"><option value="1">יורד</option><option value="0">עולה</option></select></label>
@@ -87,7 +87,7 @@ async function meta(){
   const m = await (await fetch(api("api/meta"))).json();
   $("sum").textContent = `${m.n_calls.toLocaleString()} קריאות · ${m.n_cleaned.toLocaleString()} מנוקות · ${m.dates.length} תאריכים`;
   for (const d of m.dates) $("date").insertAdjacentHTML("beforeend", `<option value="${d.date}">${d.date} (${d.n})</option>`);
-  for (let h = 5; h <= 19; h++) $("hour").insertAdjacentHTML("beforeend", `<option value="${h}">${String(h).padStart(2,"0")}:00</option>`);
+  for (let h = 0; h <= 23; h++) $("hour").insertAdjacentHTML("beforeend", `<option value="${h}">${String(h).padStart(2,"0")}:00</option>`);
 }
 function query(){
   const q = {page, size, sort: $("sort").value, desc: $("desc").value, seed};

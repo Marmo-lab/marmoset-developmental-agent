@@ -44,7 +44,7 @@ from scipy import signal  # noqa: E402
 HERE = Path(__file__).resolve().parent
 NUMERIC = ("start_s", "duration_s", "snr_db", "confidence", "peak_freq_hz", "audio_offset_s", "audio_duration_s",
            "audio_lead_s")
-SHORT_S, LOW_CONF = 0.18, 0.6  # merge_calls.quality
+SHORT_S, LOW_CONF, LONG_S = 0.18, 0.6, 8.0  # merge_calls.quality
 
 
 class Library:
@@ -61,7 +61,9 @@ class Library:
                 c = {f: float(r[f]) for f in NUMERIC if r.get(f) not in (None, "")}
                 c.update(call_id=f"{rid}_{k:05d}", recording_id=rid, start_time=r["start_time"],
                          notes=r.get("notes", ""), cleaned=rid in cleaned)
-                c["quality"] = "short_low_conf" if c["duration_s"] < SHORT_S and c.get("confidence", 1) < LOW_CONF else "ok"
+                d = c["duration_s"]
+                c["quality"] = ("short_low_conf" if d < SHORT_S and c.get("confidence", 1) < LOW_CONF
+                                else "long" if d >= LONG_S else "ok")
                 self.calls.append(c)
         self.calls.sort(key=lambda c: c["start_time"])
         self.by_id = {c["call_id"]: c for c in self.calls}
@@ -89,7 +91,7 @@ class Library:
         lo, hi = num("min_dur", 0), num("max_dur", 1e9)
         rows = [c for c in rows if lo <= c["duration_s"] <= hi]
         rows = [c for c in rows if c.get("confidence", 1) >= num("min_conf", 0) and c.get("snr_db", 99) >= num("min_snr", -99)]
-        if q.get("quality") in ("ok", "short_low_conf"):
+        if q.get("quality") in ("ok", "short_low_conf", "long"):
             rows = [c for c in rows if c["quality"] == q["quality"]]
         if q.get("cleaned") == "1":
             rows = [c for c in rows if c["cleaned"]]
