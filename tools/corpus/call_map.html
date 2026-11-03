@@ -153,7 +153,7 @@ function show(p, autoplay = true) {
   selected = p; draw();
   const nm = p.cluster >= 0 ? (names[p.cluster] || `אשכול ${p.cluster}`) : "לא משויך";
   $("sel").innerHTML = `<h2>קריאה נבחרת · ${nm}</h2>
-    <div class="meta"><span><b>${p.date}</b> ${String(p.hour).padStart(2, "0")}:00</span><span>משך <b>${p.duration_s.toFixed(2)}</b> s</span>
+    <div class="meta"><span dir="ltr"><b>${p.date}</b> ${String(p.hour).padStart(2, "0")}:00</span><span>משך <b>${p.duration_s.toFixed(2)}</b> s</span>
     <span>תדר שיא <b>${p.peak_freq_hz != null ? (p.peak_freq_hz / 1000).toFixed(1) : "–"}</b> kHz</span><span>SNR <b>${p.snr_db ?? "–"}</b> dB</span></div>
     <img alt="ספקטרוגרמה" src="${api(`api/spec/${p.call_id}`, {v: "orig"})}">
     <audio controls ${autoplay ? "autoplay" : ""} src="${api(`api/audio/${p.call_id}`, {v: "orig"})}"></audio>

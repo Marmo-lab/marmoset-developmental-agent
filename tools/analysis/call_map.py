@@ -111,7 +111,7 @@ def embed(x: np.ndarray, seed: int, perplexity: float, min_cluster: int) -> Tupl
     """``(2-D map (N, 2), cluster labels (N,), -1 = unclustered)``."""
     z = PCA(min(N_PCA, *x.shape), random_state=seed).fit_transform(x)
     xy = TSNE(2, perplexity=perplexity, init="pca", random_state=seed, n_jobs=-1).fit_transform(z)
-    return xy.astype(np.float32), HDBSCAN(min_cluster_size=min_cluster).fit_predict(xy)
+    return xy.astype(np.float32), HDBSCAN(min_cluster_size=min_cluster, copy=True).fit_predict(xy)
 
 
 def build(run: Path, n: int, seed: int, version: str, perplexity: float, min_cluster: int) -> Dict[str, object]:
