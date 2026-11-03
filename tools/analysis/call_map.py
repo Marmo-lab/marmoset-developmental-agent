@@ -24,7 +24,14 @@ way). Clustering the 2-D map, not the PCA space, follows the same paper. Its clu
 are islands of the picture, not call types; they are named by ear on the map page.
 
 Writes ``RUN/call_map/map.json`` (points, clusters, mean image per cluster) for the page
-that ``tools/corpus/call_library.py`` serves at ``/map``.
+that ``tools/corpus/call_library.py`` serves at ``/map``, and caches the images
+(``images_<version>.npy``) for ``--compare``.
+
+``--compare`` draws the same sample with other embeddings next to the map, each coloured
+by the map's clusters and by duration (``RUN/call_map/compare.png``): if a cloud is real,
+it should hold together whatever the method. PCA alone is linear; t-SNE at other
+perplexities shows how much of the picture is the setting; Isomap (on a subsample, it
+is quadratic in memory) keeps global distances that t-SNE discards.
 
 Usage (on the cluster, via tools/cluster/call_map.sbatch):
     python tools/analysis/call_map.py RUN [--n 30000] [--seed 0] [--version orig|clean]
@@ -107,6 +114,67 @@ def read_images(run: Path, rows: List[Dict[str, str]], version: str) -> np.ndarr
     return out
 
 
+def cached_images(run: Path, rows: List[Dict[str, str]], version: str) -> np.ndarray:
+    """``read_images``, kept in ``RUN/call_map/images_<version>.npy`` with the call ids beside it."""
+    d = run / "call_map"
+    d.mkdir(exist_ok=True)
+    ids = [r["call_id"] for r in rows]
+    img, idp = d / f"images_{version}.npy", d / f"images_{version}_ids.json"
+    if img.exists() and idp.exists() and json.loads(idp.read_text()) == ids:
+        return np.load(img)
+    images = read_images(run, rows, version)
+    np.save(img, images)
+    idp.write_text(json.dumps(ids))
+    return images
+
+
+def compare(run: Path, isomap_n: int = 8_000) -> Path:
+    """``compare.png``: the map's sample under PCA, t-SNE at three perplexities and Isomap."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from sklearn.manifold import Isomap
+
+    m = json.loads((run / "call_map" / "map.json").read_text())
+    meta, pts = m["meta"], m["points"]
+    rows = sample_rows(run, meta["n"], meta["seed"])
+    assert [r["call_id"] for r in rows] == [p[0] for p in pts], "map.json and the sample disagree"
+    images = cached_images(run, rows, meta["version"])
+    dur = np.array([p[4] for p in pts])
+    labels = np.array([p[3] for p in pts])
+    z = PCA(min(N_PCA, len(rows)), random_state=meta["seed"]).fit(features(images, dur))
+    zz = z.transform(features(images, dur))
+    rng = np.random.default_rng(meta["seed"])
+    sub = np.sort(rng.choice(len(rows), min(isomap_n, len(rows)), replace=False))
+    views: List[Tuple[str, np.ndarray, np.ndarray]] = [
+        (f"PCA, components 1-2 ({100 * z.explained_variance_ratio_[:2].sum():.0f}% of variance)", np.arange(len(rows)),
+         zz[:, :2]),
+        (f"t-SNE perplexity {meta['perplexity']:g} (the map)", np.arange(len(rows)), np.array([p[1:3] for p in pts]))]
+    for perp in (15.0, min(200.0, (len(rows) - 1) / 3)):
+        t0 = time.time()
+        xy = TSNE(2, perplexity=perp, init="pca", random_state=meta["seed"], n_jobs=-1).fit_transform(zz)
+        views.append((f"t-SNE perplexity {perp:g}", np.arange(len(rows)), xy))
+        print(f"t-SNE {perp:g}: {time.time() - t0:.0f} s", flush=True)
+    views.append((f"Isomap, 15 neighbours ({len(sub):,} calls)", sub, Isomap(n_neighbors=15).fit_transform(zz[sub])))
+    cmap = plt.get_cmap("tab10")
+    col = np.array([(0.75, 0.77, 0.77, 1) if c < 0 else cmap(c % 10) for c in labels])
+    fig, axs = plt.subplots(2, len(views), figsize=(4.2 * len(views), 8.4))
+    for k, (title, idx, xy) in enumerate(views):
+        for row, (c, cm) in enumerate(((col[idx], None), (np.log10(dur[idx]), "viridis"))):
+            ax = axs[row, k]
+            ax.scatter(xy[:, 0], xy[:, 1], s=0.6, c=c, cmap=cm, vmin=-1 if cm else None, vmax=1 if cm else None,
+                       linewidths=0, rasterized=True)
+            ax.set_xticks([]), ax.set_yticks([])
+            ax.set_title(title if row == 0 else "same, colour = log10 duration (0.1-10 s)", fontsize=9)
+    fig.suptitle("Colour (top) = the map's HDBSCAN clusters, grey = unclustered", fontsize=10)
+    fig.tight_layout()
+    out = run / "call_map" / "compare.png"
+    fig.savefig(out, dpi=110)
+    plt.close(fig)
+    print(f"wrote {out}", flush=True)
+    return out
+
+
 def embed(x: np.ndarray, seed: int, perplexity: float, min_cluster: int) -> Tuple[np.ndarray, np.ndarray]:
     """``(2-D map (N, 2), cluster labels (N,), -1 = unclustered)``."""
     z = PCA(min(N_PCA, *x.shape), random_state=seed).fit_transform(x)
@@ -118,7 +186,7 @@ def build(run: Path, n: int, seed: int, version: str, perplexity: float, min_clu
     t0 = time.time()
     rows = sample_rows(run, n, seed)
     print(f"{len(rows)} calls sampled", flush=True)
-    images = read_images(run, rows, version)
+    images = cached_images(run, rows, version)
     dur = np.array([float(r["duration_s"]) for r in rows])
     xy, labels = embed(features(images, dur), seed, perplexity, min_cluster)
     num = lambda r, k: round(float(r[k]), 1) if r.get(k) not in (None, "", "nan") else None  # noqa: E731
@@ -150,8 +218,12 @@ def main() -> None:
     ap.add_argument("--version", choices=("orig", "clean"), default="orig")
     ap.add_argument("--perplexity", type=float, default=50.0)
     ap.add_argument("--min-cluster", type=int, default=150, help="HDBSCAN min_cluster_size")
+    ap.add_argument("--compare", action="store_true", help="draw other embeddings of map.json's sample instead")
     a = ap.parse_args()
-    build(Path(a.run), a.n, a.seed, a.version, a.perplexity, a.min_cluster)
+    if a.compare:
+        compare(Path(a.run))
+    else:
+        build(Path(a.run), a.n, a.seed, a.version, a.perplexity, a.min_cluster)
 
 
 if __name__ == "__main__":

@@ -64,3 +64,10 @@ def test_three_call_types_form_three_pure_clusters(tmp_path: Path) -> None:
     assert len(clustered) == 3
     assert all(n.most_common(1)[0][1] / sum(n.values()) > 0.95 for n in clustered.values())
     assert {n.most_common(1)[0][0] for n in clustered.values()} == set(kinds)
+
+
+def test_compare_redraws_the_maps_sample(tmp_path: Path) -> None:
+    test_three_call_types_form_three_pure_clusters(tmp_path)
+    from tools.analysis.call_map import compare
+    assert compare(tmp_path, isomap_n=100).stat().st_size > 10_000
+    assert (tmp_path / "call_map" / "images_orig.npy").exists()
