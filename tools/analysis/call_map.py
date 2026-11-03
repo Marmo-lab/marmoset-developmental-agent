@@ -137,8 +137,9 @@ def compare(run: Path, isomap_n: int = 8_000) -> Path:
 
     m = json.loads((run / "call_map" / "map.json").read_text())
     meta, pts = m["meta"], m["points"]
-    rows = sample_rows(run, meta["n"], meta["seed"])
-    assert [r["call_id"] for r in rows] == [p[0] for p in pts], "map.json and the sample disagree"
+    with open(run / "calls_train.tsv") as f:
+        by_id = {r["call_id"]: r for r in csv.DictReader(f, delimiter="\t")}
+    rows = [by_id[p[0]] for p in pts]
     images = cached_images(run, rows, meta["version"])
     dur = np.array([p[4] for p in pts])
     labels = np.array([p[3] for p in pts])
