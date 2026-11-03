@@ -6,8 +6,9 @@ The page (``call_library.html``) lists calls with filters (date, duration, confi
 SNR, quality flag, cleaned only), plays each call as original and cleaned, draws both
 spectrograms on one scale, and records verdicts.
 
-``/map`` shows the call map of ``tools/analysis/call_map.py`` (``RUN/call_map/map.json``):
-click a point to hear it; names given to its clusters go to ``RUN/call_map/names.json``.
+``/map`` shows the call maps of ``tools/analysis/call_map.py`` (``RUN/call_map/map*.json``;
+``?m=map_c3`` picks a sub-map): click a point to hear it; names given to a map's clusters go
+to ``RUN/call_map/names.json`` for ``map``, ``names_<map>.json`` for the others.
 
 Verdicts are appended to ``RUN/library_feedback.jsonl`` (one JSON object per click; the
 last one per call wins), so Claude can read them from the run directory.
@@ -29,6 +30,7 @@ import datetime as dt
 import io
 import json
 import random
+import re
 import secrets
 import threading
 from functools import lru_cache
@@ -180,6 +182,34 @@ def _wav(x: np.ndarray, sr: int) -> bytes:
 
 
 LIBS: List[Library] = []
+MAP_NAME = re.compile(r"map(_c\d+)*")
+
+
+def _map_name(q: Dict[str, str]) -> str:
+    """The ``m`` query value, checked: only ``map`` and its sub-maps (``map_c3``, ``map_c3_c1``) are served."""
+    m = q.get("m", "map")
+    if not MAP_NAME.fullmatch(m):
+        raise KeyError(m)
+    return m
+
+
+def _names_path(run: Path, name: str) -> Path:
+    return run / "call_map" / ("names.json" if name == "map" else f"names_{name}.json")
+
+
+def _maps(run: Path) -> List[Dict]:
+    """The run's maps: name, size and, for a sub-map, its parent and cluster (read from each file's head)."""
+    out = []
+    for p in sorted((run / "call_map").glob("map*.json")):
+        if MAP_NAME.fullmatch(p.stem):
+            with open(p) as f:
+                head = f.read(4096)
+            try:  # call_map writes {"meta": {...}, "points": ...}, meta first
+                info = json.loads(head[head.index("{", 1):head.index(', "points"')])
+            except ValueError:
+                info = {}
+            out.append({"name": p.stem, "n": info.get("n"), "parent": info.get("parent"), "cluster": info.get("cluster")})
+    return out
 
 
 def make_handler(lib_id: int, token: str):
@@ -214,10 +244,12 @@ def make_handler(lib_id: int, token: str):
                     self._send((HERE / "call_library.html").read_bytes(), "text/html; charset=utf-8")
                 elif path == "/map":
                     self._send((HERE / "call_map.html").read_bytes(), "text/html; charset=utf-8")
+                elif path == "/api/maps":
+                    self._send(json.dumps(_maps(lib.run)).encode(), "application/json")
                 elif path == "/api/map":
-                    self._send((lib.run / "call_map" / "map.json").read_bytes(), "application/json")
+                    self._send((lib.run / "call_map" / f"{_map_name(q)}.json").read_bytes(), "application/json")
                 elif path == "/api/map_names":
-                    names = lib.run / "call_map" / "names.json"
+                    names = _names_path(lib.run, _map_name(q))
                     self._send(names.read_bytes() if names.exists() else b"{}", "application/json")
                 elif path == "/api/meta":
                     self._send(json.dumps(lib.meta()).encode(), "application/json")
@@ -236,11 +268,12 @@ def make_handler(lib_id: int, token: str):
         def do_POST(self) -> None:
             if self._ok() is None:
                 return
+            q = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
             if urlparse(self.path).path == "/api/map_names":
                 names = {str(int(k)): str(v)[:80] for k, v in json.loads(self.rfile.read(
                     int(self.headers.get("Content-Length", 0)))).items()}
                 with lib.lock:
-                    (lib.run / "call_map" / "names.json").write_text(json.dumps(names, ensure_ascii=False, indent=1))
+                    _names_path(lib.run, _map_name(q)).write_text(json.dumps(names, ensure_ascii=False, indent=1))
                 self._send(b'{"ok":true}', "application/json")
                 return
             if urlparse(self.path).path != "/api/feedback":

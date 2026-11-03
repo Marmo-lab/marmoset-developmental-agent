@@ -23,6 +23,9 @@ with UMAP; UMAP is not in our environment, and t-SNE keeps local structure the s
 way). Clustering the 2-D map, not the PCA space, follows the same paper. Its clusters
 are islands of the picture, not call types; they are named by ear on the map page.
 
+``--cluster C`` re-embeds one cluster of a map on its own (``map_cC.json``; nested maps
+chain, ``map_c3_c2.json``), with HDBSCAN's ``leaf`` selection, to split a large mass.
+
 Writes ``RUN/call_map/map.json`` (points, clusters, mean image per cluster) for the page
 that ``tools/corpus/call_library.py`` serves at ``/map``, and caches the images
 (``images_<version>.npy``) for ``--compare``.
@@ -35,6 +38,7 @@ is quadratic in memory) keeps global distances that t-SNE discards.
 
 Usage (on the cluster, via tools/cluster/call_map.sbatch):
     python tools/analysis/call_map.py RUN [--n 30000] [--seed 0] [--version orig|clean]
+    python tools/analysis/call_map.py RUN --cluster 3 [--parent map] [--min-cluster 60]
 """
 
 from __future__ import annotations
@@ -176,39 +180,81 @@ def compare(run: Path, isomap_n: int = 8_000) -> Path:
     return out
 
 
-def embed(x: np.ndarray, seed: int, perplexity: float, min_cluster: int) -> Tuple[np.ndarray, np.ndarray]:
-    """``(2-D map (N, 2), cluster labels (N,), -1 = unclustered)``."""
+def embed(x: np.ndarray, seed: int, perplexity: float, min_cluster: int,
+          selection: str = "eom") -> Tuple[np.ndarray, np.ndarray]:
+    """``(2-D map (N, 2), cluster labels (N,), -1 = unclustered)``.
+
+    ``selection`` is HDBSCAN's ``cluster_selection_method``: ``eom`` keeps the most stable
+    clusters of the tree, so one large stable mass stays whole; ``leaf`` takes the tree's
+    leaves, the finest clusters it supports, which is what splits such a mass.
+    """
     z = PCA(min(N_PCA, *x.shape), random_state=seed).fit_transform(x)
-    xy = TSNE(2, perplexity=perplexity, init="pca", random_state=seed, n_jobs=-1).fit_transform(z)
-    return xy.astype(np.float32), HDBSCAN(min_cluster_size=min_cluster, copy=True).fit_predict(xy)
+    xy = TSNE(2, perplexity=min(perplexity, (len(x) - 1) / 3), init="pca", random_state=seed,
+              n_jobs=-1).fit_transform(z)
+    hdb = HDBSCAN(min_cluster_size=min_cluster, cluster_selection_method=selection, copy=True)
+    return xy.astype(np.float32), hdb.fit_predict(xy)
 
 
-def build(run: Path, n: int, seed: int, version: str, perplexity: float, min_cluster: int) -> Dict[str, object]:
-    t0 = time.time()
-    rows = sample_rows(run, n, seed)
-    print(f"{len(rows)} calls sampled", flush=True)
-    images = cached_images(run, rows, version)
-    dur = np.array([float(r["duration_s"]) for r in rows])
-    xy, labels = embed(features(images, dur), seed, perplexity, min_cluster)
-    num = lambda r, k: round(float(r[k]), 1) if r.get(k) not in (None, "", "nan") else None  # noqa: E731
-    points = [[r["call_id"], round(float(a), 2), round(float(b), 2), int(c), round(float(r["duration_s"]), 3),
-               num(r, "peak_freq_hz"), num(r, "snr_db"), r["start_time"][:10], int(r["start_time"][11:13])]
-              for r, (a, b), c in zip(rows, xy, labels)]
+def _write_map(run: Path, name: str, info: List[list], images: np.ndarray, xy: np.ndarray, labels: np.ndarray,
+               meta: Dict[str, object]) -> Dict[str, object]:
+    """``RUN/call_map/<name>.json``; ``info`` rows are ``[call_id, duration_s, peak_freq_hz, snr_db, date, hour]``."""
+    dur = np.array([i[1] for i in info])
+    points = [[i[0], round(float(a), 2), round(float(b), 2), int(c), *i[1:]] for i, (a, b), c in zip(info, xy, labels)]
     clusters = []
     for c in sorted(set(labels.tolist())):
         m = labels == c
         clusters.append({"id": int(c), "n": int(m.sum()), "median_dur_s": round(float(np.median(dur[m])), 3),
                          "mean_image": np.round(images[m].mean(0), 2).tolist()})
-    out = {"meta": {"n": len(rows), "seed": seed, "version": version, "perplexity": perplexity,
-                    "min_cluster": min_cluster, "n_bands": N_BANDS, "n_steps": N_STEPS, "f_lo_hz": F_LO_HZ,
+    out = {"meta": {**meta, "name": name, "n": len(info), "n_bands": N_BANDS, "n_steps": N_STEPS, "f_lo_hz": F_LO_HZ,
                     "f_hi_hz": F_HI_HZ, "fields": ["call_id", "x", "y", "cluster", "duration_s", "peak_freq_hz",
                                                    "snr_db", "date", "hour"]},
            "points": points, "clusters": clusters}
     (run / "call_map").mkdir(exist_ok=True)
-    (run / "call_map" / "map.json").write_text(json.dumps(out))
-    print(f"{len(clusters) - (-1 in labels)} clusters, {int((labels == -1).sum())} unclustered, "
-          f"{time.time() - t0:.0f} s", flush=True)
+    (run / "call_map" / f"{name}.json").write_text(json.dumps(out))
+    print(f"{name}: {len(clusters) - (-1 in labels)} clusters, {int((labels == -1).sum())} unclustered", flush=True)
     return out
+
+
+def build(run: Path, n: int, seed: int, version: str, perplexity: float, min_cluster: int,
+          selection: str = "eom") -> Dict[str, object]:
+    """The map of a fresh sample: ``RUN/call_map/map.json``."""
+    t0 = time.time()
+    rows = sample_rows(run, n, seed)
+    print(f"{len(rows)} calls sampled", flush=True)
+    images = cached_images(run, rows, version)
+    dur = np.array([float(r["duration_s"]) for r in rows])
+    xy, labels = embed(features(images, dur), seed, perplexity, min_cluster, selection)
+    num = lambda r, k: round(float(r[k]), 1) if r.get(k) not in (None, "", "nan") else None  # noqa: E731
+    info = [[r["call_id"], round(float(r["duration_s"]), 3), num(r, "peak_freq_hz"), num(r, "snr_db"),
+             r["start_time"][:10], int(r["start_time"][11:13])] for r in rows]
+    out = _write_map(run, "map", info, images, xy, labels, {"seed": seed, "version": version, "perplexity": perplexity,
+                                                             "min_cluster": min_cluster, "selection": selection})
+    print(f"{time.time() - t0:.0f} s", flush=True)
+    return out
+
+
+def submap(run: Path, parent: str, cluster: int, perplexity: float, min_cluster: int,
+           selection: str = "leaf") -> Dict[str, object]:
+    """A map of one cluster of ``parent`` alone, re-embedded: ``RUN/call_map/<parent>_c<cluster>.json``.
+
+    In the full map a cluster shares the plane with every other call; on its own, its
+    internal differences get the whole plane (PCA and t-SNE are refit on its calls only).
+    The images come from the cache that ``build`` wrote, so no audio is read.
+    """
+    m = json.loads((run / "call_map" / f"{parent}.json").read_text())
+    meta = m["meta"]
+    pts = [p for p in m["points"] if p[3] == cluster]
+    if not pts:
+        raise ValueError(f"{parent} has no cluster {cluster}")
+    version = meta["version"]
+    ids = json.loads((run / "call_map" / f"images_{version}_ids.json").read_text())
+    pos = {c: i for i, c in enumerate(ids)}
+    images = np.load(run / "call_map" / f"images_{version}.npy")[[pos[p[0]] for p in pts]]
+    dur = np.array([p[4] for p in pts])
+    xy, labels = embed(features(images, dur), meta["seed"], perplexity, min_cluster, selection)
+    return _write_map(run, f"{parent}_c{cluster}", [[p[0], *p[4:]] for p in pts], images, xy, labels,
+                      {"seed": meta["seed"], "version": version, "perplexity": perplexity, "min_cluster": min_cluster,
+                       "selection": selection, "parent": parent, "cluster": cluster})
 
 
 def main() -> None:
@@ -219,12 +265,17 @@ def main() -> None:
     ap.add_argument("--version", choices=("orig", "clean"), default="orig")
     ap.add_argument("--perplexity", type=float, default=50.0)
     ap.add_argument("--min-cluster", type=int, default=150, help="HDBSCAN min_cluster_size")
+    ap.add_argument("--selection", choices=("eom", "leaf"), help="HDBSCAN cluster selection (default eom; leaf for --cluster)")
     ap.add_argument("--compare", action="store_true", help="draw other embeddings of map.json's sample instead")
+    ap.add_argument("--parent", default="map", help="with --cluster: the map to take the cluster from")
+    ap.add_argument("--cluster", type=int, help="re-embed this cluster of --parent alone (a sub-map)")
     a = ap.parse_args()
     if a.compare:
         compare(Path(a.run))
+    elif a.cluster is not None:
+        submap(Path(a.run), a.parent, a.cluster, a.perplexity, a.min_cluster, a.selection or "leaf")
     else:
-        build(Path(a.run), a.n, a.seed, a.version, a.perplexity, a.min_cluster)
+        build(Path(a.run), a.n, a.seed, a.version, a.perplexity, a.min_cluster, a.selection or "eom")
 
 
 if __name__ == "__main__":

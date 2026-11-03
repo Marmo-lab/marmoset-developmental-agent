@@ -71,3 +71,22 @@ def test_compare_redraws_the_maps_sample(tmp_path: Path) -> None:
     from tools.analysis.call_map import compare
     assert compare(tmp_path, isomap_n=100).stat().st_size > 10_000
     assert (tmp_path / "call_map" / "images_orig.npy").exists()
+
+
+def test_submap_reembeds_one_cluster_and_the_library_lists_it(tmp_path: Path) -> None:
+    import pytest
+
+    from tools.analysis.call_map import submap
+    from tools.corpus.call_library import _map_name, _maps, _names_path
+
+    test_three_call_types_form_three_pure_clusters(tmp_path)
+    parent = json.loads((tmp_path / "call_map" / "map.json").read_text())
+    c = max((cl for cl in parent["clusters"] if cl["id"] >= 0), key=lambda cl: cl["n"])
+    out = submap(tmp_path, "map", c["id"], perplexity=10, min_cluster=10)
+    assert out["meta"]["n"] == c["n"] and out["meta"]["parent"] == "map"
+    assert {p[0] for p in out["points"]} == {p[0] for p in parent["points"] if p[3] == c["id"]}
+    maps = {m["name"]: m for m in _maps(tmp_path)}
+    assert maps[f"map_c{c['id']}"]["cluster"] == c["id"] and maps["map"]["parent"] is None
+    assert _names_path(tmp_path, "map").name == "names.json"
+    with pytest.raises(KeyError):
+        _map_name({"m": "../calls"})
