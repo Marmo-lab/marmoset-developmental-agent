@@ -8,7 +8,7 @@
 #SBATCH --partition=elscn.q
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=6G
-#SBATCH --time=12:00:00
+#SBATCH --time=3-00:00:00
 set -euo pipefail
 export PROJECT_DIR="${SLURM_SUBMIT_DIR:-$HOME/marmoset-developmental-agent}"
 source "$PROJECT_DIR/tools/cluster/env.sh"
