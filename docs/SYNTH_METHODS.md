@@ -109,7 +109,13 @@ Parameters fixed with the user on 2026-11-05.
   - A draw whose calls cannot fit is redrawn. Under these settings that happens when the
     Poisson count and long phees coincide. It slightly favours short calls in very dense
     draws, and the realised count is in the manifest.
-- **Planted call**: the donor between its bounds (section 3), with 5 ms raised-cosine ramps
+- **Donor cleaning**: before planting, each donor clip is cleaned with the corpus's spectral
+  cleaning (`clean_calls.py`, default `CleaningConfig`). Its noise profile is taken from the
+  clip's own padding outside the call bounds. Without this the clip's recording noise is
+  scaled with the call. In the first examples, quiet-in-band donors (alarm, twitter) at
+  +20 dB carried a broadband rectangle of their own noise, about at the background's level
+  and with sharp edges: a cue a detector could find instead of the call.
+- **Planted call**: the cleaned donor between its bounds (section 3), with 5 ms raised-cosine ramps
   at both ends, scaled by a gain *g* and added: *y = b + g·s*.
 - **SNR**: one level per recording. Let *bp* be a 4th-order Butterworth band-pass, 5–20 kHz,
   applied forward and backward (zero phase). For each call, *g* is set so that

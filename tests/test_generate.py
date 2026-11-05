@@ -110,3 +110,20 @@ def test_library_serves_a_set(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert sr == SR and len(x) == g.LENGTH_S * SR
     with pytest.raises(KeyError):
         st.audio("../events")
+
+
+def test_donors_are_cleaned_of_their_own_noise(tmp_path: Path) -> None:
+    """A tone in noisy padding: off the tone's band, the planted donor is far quieter than the raw clip."""
+    rng = np.random.default_rng(4)
+    t = np.arange(SR // 2) / SR
+    clip = 0.01 * rng.standard_normal(2 * SR)
+    clip[SR // 2:SR] += 0.3 * np.sin(2 * np.pi * 7_000 * t)
+    (tmp_path / "audio").mkdir()
+    sf.write(tmp_path / "audio" / "phee_000.flac", clip.astype(np.float32), SR)
+    (tmp_path / "donors.tsv").write_text("donor_id\tcall_type\tonset_s\toffset_s\nphee_000\tphee\t0.5\t1.0\n")
+    _, audio = g.load_donors(tmp_path)
+    from scipy import signal
+    hi = signal.butter(4, (14_000, 20_000), btype="bandpass", fs=SR, output="sos")
+    raw, cleaned = clip[SR // 2:SR], audio["phee_000"]
+    assert len(cleaned) == len(raw)
+    assert 20 * np.log10(g.rms(signal.sosfiltfilt(hi, raw)) / g.rms(signal.sosfiltfilt(hi, cleaned))) > 10

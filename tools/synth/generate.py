@@ -21,6 +21,12 @@ the detector hears; ``backgrounds.py``), so generation never rereads the 4-chann
   band-pass over ``BAND_HZ`` applied forward and backward (zero phase), ``s`` the faded
   donor and ``b`` the background under it. The call is added: ``y = b + g s``.
 * **Fades** [ours]: ``FADE_S`` raised-cosine ramps at both ends of each donor.
+* **Donor cleaning** [ours]: each donor clip is first cleaned by the corpus's spectral
+  cleaning (``preprocessing/clean_calls.py``, ``CleaningConfig`` defaults), its noise profile
+  taken from the clip's own padding around the call. Without it the clip's recording noise
+  rides on the gain: in the first examples (2026-11-05) quiet-in-band donors (alarm,
+  twitter) at +20 dB carried a broadband box of their own noise, at about the background's
+  level and with sharp edges, which a detector could find instead of the call.
 
 ``CALLS_PER_MIN`` [ours]: the mean over the hours 07:00-17:59 of the per-hour means over
 138 dates of the v4 run (``tools/analysis/calls_per_hour.py``; ``figures/``), 1,271 calls
@@ -176,13 +182,19 @@ def make_recording(rec_id: str, snr: float, donors: Dict[str, List[Dict]], donor
 
 
 def load_donors(folder: Path) -> Tuple[Dict[str, List[Dict]], Dict[str, np.ndarray]]:
-    """Donors by type, and each donor's audio between its bounds."""
+    """Donors by type, and each donor's audio between its bounds, spectrally cleaned (see above)."""
+    from marmoset_developmental_agent.config.agent_config import CleaningConfig
+    from marmoset_developmental_agent.preprocessing.clean_calls import clean_call
+
+    cfg = CleaningConfig()
     by_type: Dict[str, List[Dict]] = {}
     audio = {}
     for r in csv.DictReader(open(folder / "donors.tsv"), delimiter="\t"):
         x, sr = sf.read(folder / "audio" / f"{r['donor_id']}.flac", dtype="float32")
         assert sr == SR, (r["donor_id"], sr)
-        audio[r["donor_id"]] = x[int(float(r["onset_s"]) * SR):int(float(r["offset_s"]) * SR)]
+        call = (float(r["onset_s"]), float(r["offset_s"]))
+        x = clean_call(x, SR, call, [call], cfg)[0]
+        audio[r["donor_id"]] = x[int(call[0] * SR):int(call[1] * SR)]
         by_type.setdefault(r["call_type"], []).append(r)
     return by_type, audio
 
