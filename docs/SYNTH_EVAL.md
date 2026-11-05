@@ -12,6 +12,8 @@ standard. Agreed with the user 2026-11-05; each step ends with a listening check
    44.1 kHz mono, in `shared/data/DataFromOtherLabs/Phee_calls/Turesson 2016/` (read only).
    The clips are padded; `tools/synth/donor_calls.py` resamples to 48 kHz and proposes call
    bounds; the user checks them on the library's `/donors` page.
+   **Done 2026-11-05:** the user looked over all 321 and accepted every donor as a call and
+   every proposed bound as correct; no verdicts needed (`donor_feedback.jsonl` stays empty).
 2. **Background.** Two kinds, compared against each other: (a) 1-5 night recordings with no
    calls at all (detector at a very low threshold finds nothing; the user listens), looped
    from a random start with a short crossfade; (b) day gaps between calls, several seconds
