@@ -18,6 +18,10 @@ with verdicts in ``DIR/bg_feedback.jsonl``.
 ``--synth DIR`` adds ``/synth``: a set of synthetic recordings of ``tools/synth/generate.py``
 (the minute, its spectrogram with the planted calls marked), with verdicts in ``DIR/synth_feedback.jsonl``.
 
+``--short-high DIR`` adds ``/short_high``: candidates of ``tools/analysis/find_short_high.py`` (a 2 s
+clip around each, its spectrogram, played at normal and half speed), with verdicts in
+``DIR/short_high_feedback.jsonl``.
+
 Verdicts are appended to ``RUN/library_feedback.jsonl`` (one JSON object per click; the
 last one per call wins), so Claude can read them from the run directory.
 
@@ -25,7 +29,7 @@ Every request must carry the token printed at start-up (``?t=...``): on the clus
 server listens on a compute node that other users can reach.
 
 Usage:
-    python tools/corpus/call_library.py RUN [--port 8765] [--host 127.0.0.1] [--all] [--donors DIR] [--backgrounds DIR] [--synth DIR]
+    python tools/corpus/call_library.py RUN [--port 8765] [--host 127.0.0.1] [--all] [--donors DIR] [--backgrounds DIR] [--synth DIR] [--short-high DIR]
     (--all: every recording, not only the cleaned ones)
 On the cluster: tools/cluster/call_library.sbatch, then an SSH tunnel; see its header.
 """
@@ -229,6 +233,53 @@ class SynthSet:
         _append_feedback(self.feedback_path, self.lock, "rec_id", d)
 
 
+class ShortHigh:
+    """Candidates of ``tools/analysis/find_short_high.py``: ``candidates.tsv`` and ``clips/<cand_id>.flac``."""
+
+    def __init__(self, folder: Path) -> None:
+        self.folder = folder
+        self.rows = list(csv.DictReader(open(folder / "candidates.tsv"), delimiter="\t"))
+        self.by_id = {r["cand_id"]: r for r in self.rows}
+        summary = folder / "summary.json"
+        self.summary = json.loads(summary.read_text()) if summary.exists() else {}
+        self.feedback_path = folder / "short_high_feedback.jsonl"
+        self.lock = threading.Lock()
+
+    def audio(self, cand_id: str) -> Tuple[np.ndarray, int]:
+        if cand_id not in self.by_id:  # only the candidates' clips, never a path from the URL
+            raise KeyError(cand_id)
+        x, sr = sf.read(self.folder / "clips" / f"{cand_id}.flac", dtype="float32")
+        return x, sr
+
+    def feedback(self) -> Dict[str, Dict]:
+        return _read_feedback(self.feedback_path, "cand_id")
+
+    def add_feedback(self, d: Dict) -> None:
+        _append_feedback(self.feedback_path, self.lock, "cand_id", d)
+
+
+@lru_cache(maxsize=512)
+def _short_high_png(cand_id: str) -> bytes:
+    """The 2 s clip, 0-24 kHz, each band in dB above its median; the candidate marked on top."""
+    sh = SHORT_HIGH[0]
+    x, sr = sh.audio(cand_id)
+    r = sh.by_id[cand_id]
+    f, t, s = signal.stft(x, sr, nperseg=512, noverlap=432)
+    p = 20 * np.log10(np.abs(s) + 1e-12)
+    p -= np.median(p, axis=1, keepdims=True)
+    fig = plt.figure(figsize=(5.2, 2.2), dpi=80)
+    ax = fig.add_axes([0.06, 0.11, 0.93, 0.86])
+    ax.imshow(p, origin="lower", aspect="auto", cmap="magma", vmin=0, vmax=30, extent=[0, len(x) / sr, 0, sr / 2000])
+    a = float(r["clip_offset_s"])
+    ax.axvspan(a, a + float(r["duration_s"]), ymin=0.96, ymax=1.0, color="#4fc1b8")
+    ax.set_yticks([0, 5, 10, 15, 20])
+    ax.tick_params(labelsize=6, colors="#555")
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png")
+    plt.close(fig)
+    return buf.getvalue()
+
+
 @lru_cache(maxsize=256)
 def _synth_png(rec_id: str, answers: bool) -> bytes:
     """The minute's spectrogram, 0-24 kHz; with ``answers``, each planted call shaded and named."""
@@ -330,6 +381,7 @@ LIBS: List[Library] = []
 DONORS: List[Donors] = []
 BACKGROUNDS: List[Backgrounds] = []
 SYNTH: List[SynthSet] = []
+SHORT_HIGH: List[ShortHigh] = []
 MAP_NAME = re.compile(r"map(_c\d+)*")
 
 
@@ -437,6 +489,18 @@ def make_handler(lib_id: int, token: str):
                     self._send(_wav(x, sr), "audio/wav", cache=True)
                 elif path.startswith("/api/synth_spec/"):
                     self._send(_synth_png(path.split("/")[-1], q.get("answers", "1") == "1"), "image/png", cache=True)
+                elif path == "/short_high":
+                    self._send((HERE / "short_high.html").read_bytes(), "text/html; charset=utf-8")
+                elif path == "/api/short_high":
+                    sh = SHORT_HIGH[0]
+                    fb = sh.feedback()
+                    self._send(json.dumps({"summary": sh.summary, "rows": [{**r, "feedback": fb.get(r["cand_id"])}
+                                                                           for r in sh.rows]}).encode(), "application/json")
+                elif path.startswith("/api/short_high_audio/"):
+                    x, sr = SHORT_HIGH[0].audio(path.split("/")[-1])
+                    self._send(_wav(x, sr), "audio/wav", cache=True)
+                elif path.startswith("/api/short_high_spec/"):
+                    self._send(_short_high_png(path.split("/")[-1]), "image/png", cache=True)
                 elif path == "/api/meta":
                     self._send(json.dumps(lib.meta()).encode(), "application/json")
                 elif path == "/api/calls":
@@ -460,6 +524,14 @@ def make_handler(lib_id: int, token: str):
                     int(self.headers.get("Content-Length", 0)))).items()}
                 with lib.lock:
                     _names_path(lib.run, _map_name(q)).write_text(json.dumps(names, ensure_ascii=False, indent=1))
+                self._send(b'{"ok":true}', "application/json")
+                return
+            if urlparse(self.path).path == "/api/short_high_feedback" and SHORT_HIGH:
+                d = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                if d.get("cand_id") not in SHORT_HIGH[0].by_id:
+                    self._send(b"unknown candidate", "text/plain", 400)
+                    return
+                SHORT_HIGH[0].add_feedback(d)
                 self._send(b'{"ok":true}', "application/json")
                 return
             if urlparse(self.path).path == "/api/synth_feedback" and SYNTH:
@@ -510,6 +582,7 @@ def main() -> None:
     ap.add_argument("--donors", type=Path, help="donor-call folder of tools/synth/donor_calls.py, served at /donors")
     ap.add_argument("--backgrounds", type=Path, help="folder of tools/synth/backgrounds.py, served at /backgrounds")
     ap.add_argument("--synth", type=Path, help="a set of tools/synth/generate.py, served at /synth")
+    ap.add_argument("--short-high", type=Path, help="folder of tools/analysis/find_short_high.py, served at /short_high")
     a = ap.parse_args()
     LIBS.append(Library(Path(a.run), a.all))
     if a.donors:
@@ -521,6 +594,9 @@ def main() -> None:
     if a.synth:
         SYNTH.append(SynthSet(a.synth))
         print(f"{len(SYNTH[0].rows)} synthetic recordings at /synth", flush=True)
+    if a.short_high:
+        SHORT_HIGH.append(ShortHigh(a.short_high))
+        print(f"{len(SHORT_HIGH[0].rows)} short high candidates at /short_high", flush=True)
     token = a.token or secrets.token_urlsafe(12)
     lib = LIBS[0]
     print(f"{len(lib.calls)} calls from {len(set(c['recording_id'] for c in lib.calls))} recordings", flush=True)

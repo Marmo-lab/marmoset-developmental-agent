@@ -43,3 +43,26 @@ def test_a_call_across_a_block_edge_is_kept_once() -> None:
     y[i:i + len(t)] += 0.1 * np.sin(2 * np.pi * 14_000 * t)
     c = fsh.find(lambda s, n: y[s:s + n], len(y))
     assert len(c) == 1
+
+
+def test_library_serves_the_candidates(tmp_path) -> None:
+    import csv
+
+    import pytest
+    import soundfile as sf
+
+    import tools.corpus.call_library as cl
+    (tmp_path / "clips").mkdir()
+    sf.write(tmp_path / "clips" / "r_0000.flac", np.zeros(2 * SR, np.float32), SR)
+    with open(tmp_path / "candidates.tsv", "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fsh.FIELDS + ["clip_offset_s"], delimiter="\t")
+        w.writeheader()
+        w.writerow({"cand_id": "r_0000", "recording_id": "r", "start_s": 10, "duration_s": 0.1, "peak_hz": 13000,
+                    "high_db": 20, "lead_db": 10, "in_run_call": 0, "clip_offset_s": 0.95})
+    sh = cl.ShortHigh(tmp_path)
+    cl.SHORT_HIGH[:] = [sh]
+    assert sh.audio("r_0000")[0].shape == (2 * SR,) and cl._short_high_png("r_0000")[:4] == b"\x89PNG"
+    with pytest.raises(KeyError):
+        sh.audio("../candidates")
+    sh.add_feedback({"cand_id": "r_0000", "verdict": "noise"})
+    assert sh.feedback()["r_0000"]["verdict"] == "noise"
