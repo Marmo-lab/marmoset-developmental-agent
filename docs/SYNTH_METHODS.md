@@ -157,10 +157,11 @@ Parameters fixed with the user on 2026-11-05.
 - **Matching**: planted calls against detections. One-to-one greedy matching, best pairs
   first, at IoU ≥ 0.5, the same rule as `DETECTOR_EVAL.md` (`score_detectors.py`). Also
   reported: any-overlap matching.
-- **Main view** **[decided, 2026-11-05]**: IoU ≥ 0.5, except for phees (2, 3 and 4 notes),
-  which count as found when any detection overlaps them. Every detection overlapping a phee
-  counts as correct. The detector splits multi-note phees at the note gaps; the notes still
-  reach the corpus, which is what the developmental agent needs.
+- **Main view** **[decided, 2026-11-05]**: IoU ≥ 0.5, except for multi-syllable calls (phees
+  of 2, 3 and 4 notes, twitter, trill), which count as found when any detection overlaps
+  them. Every detection overlapping such a call counts as correct. The detector splits these
+  calls at their inner gaps; the pieces still reach the corpus, which is what the
+  developmental agent needs.
 - **Short high calls** (tsik, tsik-ek, seep; peaks about 13–14 kHz) stay in the evaluation
   although the examples suggest the detector misses them; their miss rate is reported as a
   limitation.

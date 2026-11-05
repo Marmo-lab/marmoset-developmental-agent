@@ -14,10 +14,10 @@ exclusion is off: the recordings carry no wall-clock time. Each detection keeps 
   (``tools/analysis/score_detectors.py``, ``score_clip``). Recall_iou and precision_iou.
 * **Overlap**: a planted call is found if any detection overlaps it; a detection is right
   if it overlaps any planted call. Tolerant of split or merged calls.
-* **Main** [ours, with the user, 2026-11-05]: IoU >= 0.5, except that a phee (any
-  ``SPLIT_OK`` type) counts as found when any detection overlaps it, and every detection
-  overlapping it counts as right. The detector splits multi-note phees at the note gaps; the
-  notes still reach the corpus, which is what the developmental agent needs.
+* **Main** [ours, with the user, 2026-11-05]: IoU >= 0.5, except that a multi-syllable call
+  (phee, twitter, trill: ``SPLIT_OK``) counts as found when any detection overlaps it, and
+  every detection overlapping it counts as right. The detector splits these calls at their
+  inner gaps; the pieces still reach the corpus, which is what the developmental agent needs.
 * **False alarms per hour**: detections that overlap no planted call, per hour of audio.
 * **Edges**: median |onset| and |offset| error (ms) of the IoU matches.
 
@@ -44,7 +44,7 @@ from typing import Dict, List, Sequence, Tuple
 import numpy as np
 
 SHORT_S, LOW_CONF, LONG_S = 0.18, 0.6, 8.0  # merge_calls.quality
-SPLIT_OK = ("phee",)  # call-type prefixes scored by overlap in the main view
+SPLIT_OK = ("phee", "twitter", "trill")  # multi-syllable types, scored by overlap in the main view
 Interval = Tuple[float, float]
 
 
