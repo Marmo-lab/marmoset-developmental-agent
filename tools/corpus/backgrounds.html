@@ -54,6 +54,7 @@ const api = (p, q = {}) => `${p}?${new URLSearchParams({...q, t: T})}`;
 const $ = id => document.getElementById(id);
 const VERDICTS = [["approve","✓ מאשר כרקע"],["reject","✗ לא מתאים"],["unsure","? לא בטוח"]];
 const PRESETS = [5, 20, 35, 50];
+const LOADED = Date.now();   // backgrounds.py select redraws the images: never show a cached old one
 
 function card(r){
   const el = document.createElement("article"); el.className = "cand";
@@ -62,7 +63,7 @@ function card(r){
     <div class="meta"><b dir="ltr">${t}</b><span>אורך <b>${(r.duration_s / 60).toFixed(0)}</b> דק׳</span>
       <span>רמת רקע חציונית <b dir="ltr">${r.level_med_db} dB</b> <span dir="ltr">(${r.level_p5_db} … ${r.level_p95_db})</span></span>
       <span>זיהויים בסף נמוך <b>${r.n_low}</b></span><code>${r.recording_id}</code></div>
-    <div class="spec"><img loading="lazy" alt="ספקטרוגרמה של שעת ההקלטה" src="${api(`api/bg_png/${r.recording_id}`)}"><div class="mark"></div></div>
+    <div class="spec"><img loading="lazy" alt="ספקטרוגרמה של שעת ההקלטה" src="${api(`api/bg_png/${r.recording_id}`, {v: LOADED})}"><div class="mark"></div></div>
     <div class="row"><span>קטעים:</span>${PRESETS.map(m => `<button type="button" data-m="${m}">דקה ${m}</button>`).join("")}
       <audio controls preload="none"></audio><span class="now"></span></div>
     <div class="row verdicts">${VERDICTS.map(([v, l]) => `<button type="button" data-v="${v}">${l}</button>`).join("")}
