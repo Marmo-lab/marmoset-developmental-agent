@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.synth.score import detect, match_iou, quality, score, score_recording
+from tools.synth.score import detect, match_iou, quality, score, score_recording, split_ok
 
 
 def test_matching_and_counts() -> None:
@@ -18,6 +18,13 @@ def test_matching_and_counts() -> None:
     assert s["call_hit"] == [True, False, True] and s["call_iou"] == [True, False, True]
     assert s["det_hit"] == [True, False, True, True] and s["n_iou"] == 2
     assert [round(x, 3) for x in s["onset_err"]] == [0.1, 0.4]
+    s = score_recording(dets, calls, [False, False, False])
+    assert s["call_main"] == s["call_iou"] and s["det_main"] == [True, False, False, True]
+    s = score_recording(dets, calls, [False, False, True])        # the split call is a phee: both pieces right
+    assert s["call_main"] == [True, False, True] and s["det_main"] == [True, False, True, True]
+    s = score_recording([(9.0, 9.3), (9.4, 9.6)], calls, [False, False, True])   # no piece reaches IoU 0.5
+    assert s["call_iou"] == [False, False, False] and s["call_main"] == [False, False, True]
+    assert split_ok("phee_3") and not split_ok("tsik")
     assert quality(0.1, 0.5) == "short_low_conf" and quality(0.1, 0.7) == "ok" and quality(9, 0.1) == "long"
 
 

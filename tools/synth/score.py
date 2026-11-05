@@ -14,6 +14,10 @@ exclusion is off: the recordings carry no wall-clock time. Each detection keeps 
   (``tools/analysis/score_detectors.py``, ``score_clip``). Recall_iou and precision_iou.
 * **Overlap**: a planted call is found if any detection overlaps it; a detection is right
   if it overlaps any planted call. Tolerant of split or merged calls.
+* **Main** [ours, with the user, 2026-11-05]: IoU >= 0.5, except that a phee (any
+  ``SPLIT_OK`` type) counts as found when any detection overlaps it, and every detection
+  overlapping it counts as right. The detector splits multi-note phees at the note gaps; the
+  notes still reach the corpus, which is what the developmental agent needs.
 * **False alarms per hour**: detections that overlap no planted call, per hour of audio.
 * **Edges**: median |onset| and |offset| error (ms) of the IoU matches.
 
@@ -40,6 +44,7 @@ from typing import Dict, List, Sequence, Tuple
 import numpy as np
 
 SHORT_S, LOW_CONF, LONG_S = 0.18, 0.6, 8.0  # merge_calls.quality
+SPLIT_OK = ("phee",)  # call-type prefixes scored by overlap in the main view
 Interval = Tuple[float, float]
 
 
@@ -87,12 +92,25 @@ def match_iou(dets: Sequence[Interval], calls: Sequence[Interval]) -> List[Tuple
     return out
 
 
-def score_recording(dets: Sequence[Interval], calls: Sequence[Interval]) -> Dict[str, object]:
-    """Per call: found by overlap, found at IoU, edge errors; per detection: overlaps a call."""
+def split_ok(call_type: str) -> bool:
+    return call_type.startswith(SPLIT_OK)
+
+
+def score_recording(dets: Sequence[Interval], calls: Sequence[Interval],
+                    splittable: Sequence[bool] = ()) -> Dict[str, object]:
+    """Per call: found by overlap, at IoU, in the main view, edge errors; per detection: the same.
+
+    ``splittable[j]`` marks a call scored by overlap in the main view (a phee; see above)."""
+    splittable = list(splittable) or [False] * len(calls)
     m = dict((j, i) for i, j in match_iou(dets, calls))
+    hit = [any(_ov(c, d) > 0 for d in dets) for c in calls]
+    matched = set(m.values())
     return {
-        "call_hit": [any(_ov(c, d) > 0 for d in dets) for c in calls],
+        "call_hit": hit,
         "call_iou": [j in m for j in range(len(calls))],
+        "call_main": [j in m or (splittable[j] and hit[j]) for j in range(len(calls))],
+        "det_main": [i in matched or any(sp and _ov(d, c) > 0 for c, sp in zip(calls, splittable))
+                     for i, d in enumerate(dets)],
         "onset_err": [abs(dets[m[j]][0] - calls[j][0]) for j in range(len(calls)) if j in m],
         "offset_err": [abs(dets[m[j]][1] - calls[j][1]) for j in range(len(calls)) if j in m],
         "det_hit": [any(_ov(d, c) > 0 for c in calls) for d in dets],
@@ -119,24 +137,29 @@ def score(folder: Path) -> Dict:
         by_snr: Dict[str, Dict[str, list]] = defaultdict(lambda: defaultdict(list))
         by_type: Dict[Tuple[str, str], List[bool]] = defaultdict(list)
         by_type_any: Dict[Tuple[str, str], List[bool]] = defaultdict(list)
+        by_type_main: Dict[Tuple[str, str], List[bool]] = defaultdict(list)
         for r in recs:
             ds = [(float(d["start_s"]), float(d["end_s"])) for d in dets[r["rec_id"]]
                   if view == "detector" or d["quality"] != "short_low_conf"]
             ev = events[r["rec_id"]]
-            s = score_recording(ds, [(float(e["onset_s"]), float(e["offset_s"])) for e in ev])
+            s = score_recording(ds, [(float(e["onset_s"]), float(e["offset_s"])) for e in ev],
+                                [split_ok(e["call_type"]) for e in ev])
             b = by_snr[r["snr"]]
-            for k in ("call_hit", "call_iou", "onset_err", "offset_err", "det_hit"):
+            for k in ("call_hit", "call_iou", "call_main", "det_main", "onset_err", "offset_err", "det_hit"):
                 b[k] += s[k]
             b["n_iou"].append(s["n_iou"])
             b["seconds"].append(seconds[r["rec_id"]])
-            for e, hit, iou in zip(ev, s["call_hit"], s["call_iou"]):
+            for e, hit, iou, main in zip(ev, s["call_hit"], s["call_iou"], s["call_main"]):
                 by_type[(e["call_type"], r["snr"])].append(iou)
                 by_type_any[(e["call_type"], r["snr"])].append(hit)
+                by_type_main[(e["call_type"], r["snr"])].append(main)
         levels = {}
         for snr, b in sorted(by_snr.items(), key=lambda kv: -float(kv[0])):
             fa = sum(not h for h in b["det_hit"])
             levels[snr] = {
                 "snr_db": round(20 * np.log10(float(snr)), 2), "n_calls": len(b["call_hit"]), "n_det": len(b["det_hit"]),
+                "recall_main": _div(sum(b["call_main"]), len(b["call_main"])),
+                "precision_main": _div(sum(b["det_main"]), len(b["det_main"])),
                 "recall": _div(sum(b["call_hit"]), len(b["call_hit"])), "precision": _div(sum(b["det_hit"]), len(b["det_hit"])),
                 "recall_iou": _div(sum(b["call_iou"]), len(b["call_iou"])), "precision_iou": _div(sum(b["n_iou"]), len(b["det_hit"])),
                 "false_alarms_per_h": fa * 3600 / sum(b["seconds"]),
@@ -145,6 +168,7 @@ def score(folder: Path) -> Dict:
         types = {}
         for (t, snr), v in sorted(by_type.items()):
             types.setdefault(t, {})[snr] = {"n": len(v), "recall_iou": _div(sum(v), len(v)),
+                                            "recall_main": _div(sum(by_type_main[(t, snr)]), len(v)),
                                             "recall": _div(sum(by_type_any[(t, snr)]), len(v))}
         out["views"][view] = {"by_snr": levels, "by_type": types}
     (folder / "scores.json").write_text(json.dumps(out, indent=1))
@@ -169,11 +193,12 @@ def plot(s: Dict, path: Path) -> None:
     ax.plot(x, [v["by_snr"][k]["recall"] for k in snrs], color="#2a78d6", lw=2.4, marker="o", ms=4, label="all types")
     ax.set_title("Recall by call type (overlap)", fontsize=10, loc="left")
     ax = axes[1]
-    for key, color, label in (("recall", "#2a78d6", "recall (overlap)"), ("recall_iou", "#2a78d6", "recall (IoU ≥ 0.5)"),
+    for key, color, label in (("recall_main", "#1a4f99", "recall (main)"), ("precision_main", "#a8431a", "precision (main)"),
+                              ("recall", "#2a78d6", "recall (overlap)"), ("recall_iou", "#2a78d6", "recall (IoU ≥ 0.5)"),
                               ("precision", "#eb6834", "precision (overlap)"), ("precision_iou", "#eb6834", "precision (IoU ≥ 0.5)")):
-        ax.plot(x, [v["by_snr"][k][key] for k in snrs], color=color, lw=2, marker="o", ms=4,
-                ls="-" if "iou" not in key else "--", label=label)
-    ax.set_title("All calls", fontsize=10, loc="left")
+        ax.plot(x, [v["by_snr"][k][key] for k in snrs], color=color, marker="o", ms=4,
+                ls="--" if "iou" in key else "-", lw=3 if "main" in key else 1.4, label=label)
+    ax.set_title("All calls (main: IoU >= 0.5, phees by overlap)", fontsize=10, loc="left")
     ax = axes[2]
     ax.plot(x, [v["by_snr"][k]["false_alarms_per_h"] for k in snrs], color="#52514e", lw=2, marker="o", ms=4)
     ax.set_title("False alarms per hour (no planted call)", fontsize=10, loc="left")
@@ -206,7 +231,8 @@ def main() -> None:
     for view, v in s["views"].items():
         print(view)
         for snr, r in v["by_snr"].items():
-            print(f"  SNR {float(snr):>4g} ({r['snr_db']:+.1f} dB): R {r['recall']:.3f} P {r['precision']:.3f} "
+            print(f"  SNR {float(snr):>4g} ({r['snr_db']:+.1f} dB): main R {r['recall_main']:.3f} "
+                  f"P {r['precision_main']:.3f} | overlap R {r['recall']:.3f} P {r['precision']:.3f} "
                   f"R_iou {r['recall_iou']:.3f} P_iou {r['precision_iou']:.3f} FA/h {r['false_alarms_per_h']:.0f} "
                   f"edges {r['onset_err_ms']:.0f}/{r['offset_err_ms']:.0f} ms")
 

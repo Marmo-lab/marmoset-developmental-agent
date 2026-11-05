@@ -112,8 +112,8 @@ def test_library_serves_a_set(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         st.audio("../events")
 
 
-def test_donors_are_cleaned_of_their_own_noise(tmp_path: Path) -> None:
-    """A tone in noisy padding: off the tone's band, the planted donor is far quieter than the raw clip."""
+def test_donors_are_raw_unless_cleaning_is_asked(tmp_path: Path) -> None:
+    """Raw by default; with ``clean``, off the tone's band the donor is far quieter than the raw clip."""
     rng = np.random.default_rng(4)
     t = np.arange(SR // 2) / SR
     clip = 0.01 * rng.standard_normal(2 * SR)
@@ -121,7 +121,9 @@ def test_donors_are_cleaned_of_their_own_noise(tmp_path: Path) -> None:
     (tmp_path / "audio").mkdir()
     sf.write(tmp_path / "audio" / "phee_000.flac", clip.astype(np.float32), SR)
     (tmp_path / "donors.tsv").write_text("donor_id\tcall_type\tonset_s\toffset_s\nphee_000\tphee\t0.5\t1.0\n")
-    _, audio = g.load_donors(tmp_path)
+    _, raw_audio = g.load_donors(tmp_path)
+    assert np.allclose(raw_audio["phee_000"], clip[SR // 2:SR], atol=1e-4)   # raw by default (FLAC 16-bit)
+    _, audio = g.load_donors(tmp_path, clean=True)
     from scipy import signal
     hi = signal.butter(4, (14_000, 20_000), btype="bandpass", fs=SR, output="sos")
     raw, cleaned = clip[SR // 2:SR], audio["phee_000"]

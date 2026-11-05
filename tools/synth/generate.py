@@ -21,12 +21,12 @@ the detector hears; ``backgrounds.py``), so generation never rereads the 4-chann
   band-pass over ``BAND_HZ`` applied forward and backward (zero phase), ``s`` the faded
   donor and ``b`` the background under it. The call is added: ``y = b + g s``.
 * **Fades** [ours]: ``FADE_S`` raised-cosine ramps at both ends of each donor.
-* **Donor cleaning** [ours]: each donor clip is first cleaned by the corpus's spectral
-  cleaning (``preprocessing/clean_calls.py``, ``CleaningConfig`` defaults), its noise profile
-  taken from the clip's own padding around the call. Without it the clip's recording noise
-  rides on the gain: in the first examples (2026-11-05) quiet-in-band donors (alarm,
-  twitter) at +20 dB carried a broadband box of their own noise, at about the background's
-  level and with sharp edges, which a detector could find instead of the call.
+* **Donors are planted raw** [ours, with the user]: the clip between its bounds, its own
+  recording noise included. The corpus's spectral cleaning (``preprocessing/clean_calls.py``,
+  noise from the clip's padding) removed that noise but, by ear (2026-11-05), made the calls
+  sound unnatural; the user prefers a little noise. It stays as ``--clean-donors``. Known cost:
+  at high SNR a quiet-in-band donor (alarm, twitter) carries a faint broadband box of its own
+  noise.
 
 ``CALLS_PER_MIN`` [ours]: the mean over the hours 07:00-17:59 of the per-hour means over
 138 dates of the v4 run (``tools/analysis/calls_per_hour.py``; ``figures/``), 1,271 calls
@@ -181,8 +181,8 @@ def make_recording(rec_id: str, snr: float, donors: Dict[str, List[Dict]], donor
     return y, events, start
 
 
-def load_donors(folder: Path) -> Tuple[Dict[str, List[Dict]], Dict[str, np.ndarray]]:
-    """Donors by type, and each donor's audio between its bounds, spectrally cleaned (see above)."""
+def load_donors(folder: Path, clean: bool = False) -> Tuple[Dict[str, List[Dict]], Dict[str, np.ndarray]]:
+    """Donors by type, and each donor's audio between its bounds; raw unless ``clean`` (see above)."""
     from marmoset_developmental_agent.config.agent_config import CleaningConfig
     from marmoset_developmental_agent.preprocessing.clean_calls import clean_call
 
@@ -193,7 +193,8 @@ def load_donors(folder: Path) -> Tuple[Dict[str, List[Dict]], Dict[str, np.ndarr
         x, sr = sf.read(folder / "audio" / f"{r['donor_id']}.flac", dtype="float32")
         assert sr == SR, (r["donor_id"], sr)
         call = (float(r["onset_s"]), float(r["offset_s"]))
-        x = clean_call(x, SR, call, [call], cfg)[0]
+        if clean:
+            x = clean_call(x, SR, call, [call], cfg)[0]
         audio[r["donor_id"]] = x[int(call[0] * SR):int(call[1] * SR)]
         by_type.setdefault(r["call_type"], []).append(r)
     return by_type, audio
@@ -225,8 +226,9 @@ def extract(backgrounds: Path) -> None:
         print(f"{c['recording_id']}: extracted", flush=True)
 
 
-def make(donors_dir: Path, backgrounds: Path, out: Path, n: int, levels: Sequence[float], seed: int) -> None:
-    donors, donor_audio = load_donors(donors_dir)
+def make(donors_dir: Path, backgrounds: Path, out: Path, n: int, levels: Sequence[float], seed: int,
+         clean: bool = False) -> None:
+    donors, donor_audio = load_donors(donors_dir, clean)
     bgs = sorted((backgrounds / "audio").glob("*.flac"))
     assert bgs, f"no extracted background in {backgrounds / 'audio'}"
     (out / "audio").mkdir(parents=True, exist_ok=True)
@@ -260,11 +262,12 @@ def main() -> None:
     ap.add_argument("--n", type=int, default=300)
     ap.add_argument("--snr", default=",".join(f"{s:g}" for s in SNR_LEVELS))
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--clean-donors", action="store_true", help="spectrally clean the donors (off by default)")
     a = ap.parse_args()
     if a.step == "extract":
         extract(a.paths[0])
     else:
-        make(*a.paths, n=a.n, levels=[float(s) for s in a.snr.split(",")], seed=a.seed)
+        make(*a.paths, n=a.n, levels=[float(s) for s in a.snr.split(",")], seed=a.seed, clean=a.clean_donors)
 
 
 if __name__ == "__main__":

@@ -109,13 +109,14 @@ Parameters fixed with the user on 2026-11-05.
   - A draw whose calls cannot fit is redrawn. Under these settings that happens when the
     Poisson count and long phees coincide. It slightly favours short calls in very dense
     draws, and the realised count is in the manifest.
-- **Donor cleaning**: before planting, each donor clip is cleaned with the corpus's spectral
-  cleaning (`clean_calls.py`, default `CleaningConfig`). Its noise profile is taken from the
-  clip's own padding outside the call bounds. Without this the clip's recording noise is
-  scaled with the call. In the first examples, quiet-in-band donors (alarm, twitter) at
-  +20 dB carried a broadband rectangle of their own noise, about at the background's level
-  and with sharp edges: a cue a detector could find instead of the call.
-- **Planted call**: the cleaned donor between its bounds (section 3), with 5 ms raised-cosine ramps
+- **Donors are planted raw** (decided by ear, 2026-11-05): the donor clip between its bounds,
+  with its own recording noise. Spectral cleaning of the donors (the corpus's `clean_calls.py`,
+  noise profile from the clip's padding) was tried and rejected: it made the calls sound
+  unnatural, and natural-sounding calls with a little noise are preferred. Known cost: at
+  high SNR the donor's noise is scaled with the call, so quiet-in-band donors (alarm,
+  twitter) at +20 dB carry a faint broadband rectangle of their own noise. Cleaning remains
+  available (`--clean-donors`) for comparison.
+- **Planted call**: the donor between its bounds (section 3), with 5 ms raised-cosine ramps
   at both ends, scaled by a gain *g* and added: *y = b + g·s*.
 - **SNR**: one level per recording. Let *bp* be a 4th-order Butterworth band-pass, 5–20 kHz,
   applied forward and backward (zero phase). For each call, *g* is set so that
@@ -156,6 +157,13 @@ Parameters fixed with the user on 2026-11-05.
 - **Matching**: planted calls against detections. One-to-one greedy matching, best pairs
   first, at IoU ≥ 0.5, the same rule as `DETECTOR_EVAL.md` (`score_detectors.py`). Also
   reported: any-overlap matching.
+- **Main view** **[decided, 2026-11-05]**: IoU ≥ 0.5, except for phees (2, 3 and 4 notes),
+  which count as found when any detection overlaps them. Every detection overlapping a phee
+  counts as correct. The detector splits multi-note phees at the note gaps; the notes still
+  reach the corpus, which is what the developmental agent needs.
+- **Short high calls** (tsik, tsik-ek, seep; peaks about 13–14 kHz) stay in the evaluation
+  although the examples suggest the detector misses them; their miss rate is reported as a
+  limitation.
 - **Metrics**:
   - precision, recall, F1;
   - false alarms per hour, separately for noise-event overlaps and plain background;
