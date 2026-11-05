@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>קריאות לשתילה</title>
+<style>
+/* Layout: a per-type summary over a grid of donor cards; each card shows the whole clip with the proposed bounds. */
+:root{
+  --bg:#f3f5f4; --card:#ffffff; --ink:#1d282c; --muted:#5d6b70; --rule:#d9e0de; --accent:#0b7a75; --accent-soft:#e1f0ee;
+  --ok:#2e7d32; --bad:#c62828; --warn:#b85c00; --edge:#6a4fb3;
+  --font:"Assistant","Arial Hebrew",Arial,sans-serif; --mono:ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#121819;--card:#1a2224;--ink:#e2eae8;--muted:#9aaeb0;--rule:#2b3739;--accent:#4fc1b8;--accent-soft:#163030;
+        --ok:#7cc47f;--bad:#ef7b7b;--warn:#f0a95c;--edge:#b3a1ee;color-scheme:dark}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.5}
+header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--rule);padding:10px max(16px,2vw);display:flex;flex-direction:column;gap:8px}
+h1{margin:0;font-size:1.25rem}
+.sum{color:var(--muted);font-size:.9rem}
+.filters{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:end}
+.filters label{display:flex;flex-direction:column;font-size:.75rem;color:var(--muted);gap:2px}
+.filters select{font:inherit;font-size:.9rem;padding:3px 6px;border:1px solid var(--rule);border-radius:5px;background:var(--bg);color:var(--ink)}
+button{font:inherit;cursor:pointer;border:1px solid var(--rule);background:var(--bg);color:var(--ink);border-radius:5px;padding:4px 10px}
+table{border-collapse:collapse;font-size:.82rem;font-variant-numeric:tabular-nums}
+th,td{padding:2px 10px;border-bottom:1px solid var(--rule);text-align:start}
+th{color:var(--muted);font-weight:600}
+tr.pick{cursor:pointer}
+tr.pick:hover td{background:var(--accent-soft)}
+main{padding:14px max(16px,2vw);display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:14px;max-width:1400px;margin:0 auto}
+.call{background:var(--card);border:1px solid var(--rule);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.meta{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.meta b{color:var(--ink);font-weight:600}
+.badge{font-size:.72rem;padding:1px 7px;border-radius:9px;background:var(--accent-soft);color:var(--ink)}
+.call img{width:100%;aspect-ratio:2.6/1;object-fit:fill;border-radius:4px;background:var(--bg)}
+.plays{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.plays label{font-size:.75rem;color:var(--muted);display:flex;flex-direction:column}
+.plays audio{width:100%;height:30px}
+.verdicts{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.verdicts button{font-size:.8rem;padding:3px 8px}
+.verdicts button.on[data-v=good]{background:var(--ok);color:#fff;border-color:var(--ok)}
+.verdicts button.on[data-v=edges]{background:var(--edge);color:#fff;border-color:var(--edge)}
+.verdicts button.on[data-v=noisy]{background:var(--warn);color:#fff;border-color:var(--warn)}
+.verdicts button.on[data-v=reject]{background:var(--bad);color:#fff;border-color:var(--bad)}
+.verdicts button.on[data-v=unsure]{background:var(--muted);color:#fff;border-color:var(--muted)}
+.verdicts input{flex:1;min-width:10rem;font:inherit;font-size:.85rem;padding:3px 6px;border:1px solid var(--rule);border-radius:5px;background:var(--bg);color:var(--ink)}
+.saved{font-size:.75rem;color:var(--ok)}
+.empty{color:var(--muted);padding:30px;text-align:center;grid-column:1/-1}
+code{font-family:var(--mono);font-size:.8em;direction:ltr;unicode-bidi:isolate}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width:520px){main{grid-template-columns:1fr}.plays{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div style="display:flex;gap:14px;align-items:baseline;flex-wrap:wrap">
+    <h1>קריאות לשתילה</h1><span class="sum" id="sum">טוען…</span>
+  </div>
+  <div class="sum">הקווים בספקטרוגרמה הם הגבולות שהוצעו אוטומטית. "הקריאה לבד" היא מה שיישתל בהקלטות.</div>
+  <div style="overflow-x:auto"><table id="types"></table></div>
+  <form class="filters" id="f">
+    <label>סוג<select id="type"><option value="">הכל</option></select></label>
+    <label>המשוב שלי<select id="verdict"><option value="">הכל</option><option value="none">עוד לא סימנתי</option></select></label>
+  </form>
+</header>
+<main id="list"><div class="empty">טוען…</div></main>
+<script>
+const T = new URLSearchParams(location.search).get("t") || "";
+const api = (p, q = {}) => `${p}?${new URLSearchParams({...q, t: T})}`;
+const $ = id => document.getElementById(id);
+const VERDICTS = [["good","✓ קריאה, גבולות נכונים"],["edges","↔ גבולות לא נכונים"],["noisy","⚠ רעש / קריאה נוספת"],["reject","✗ לא לשתול"],["unsure","? לא בטוח"]];
+const fmt = (x, d = 2) => x == null ? "—" : Number(x).toFixed(d);
+let rows = [];
+
+for (const [v, t] of VERDICTS) $("verdict").insertAdjacentHTML("beforeend", `<option value="${v}">${t}</option>`);
+
+function summary(){
+  const types = [...new Set(rows.map(r => r.call_type))];
+  const count = (t, v) => rows.filter(r => r.call_type === t && (r.feedback ? r.feedback.verdict : null) === v).length;
+  const med = a => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+  $("types").innerHTML = `<tr><th>סוג</th><th>קריאות</th><th>אורך חציוני</th><th>בולטות חציונית</th>${VERDICTS.map(([, t]) => `<th>${t}</th>`).join("")}</tr>` +
+    types.map(t => { const rs = rows.filter(r => r.call_type === t);
+      return `<tr class="pick" data-t="${t}"><td><b>${t}</b></td><td>${rs.length}</td><td>${fmt(med(rs.map(r => r.duration_s)))} שנ׳</td><td>${fmt(med(rs.map(r => r.rise_db)), 0)} dB</td>${VERDICTS.map(([v]) => `<td>${count(t, v) || ""}</td>`).join("")}</tr>`; }).join("");
+  $("types").querySelectorAll("tr.pick").forEach(tr => tr.onclick = () => { $("type").value = tr.dataset.t; render(); });
+  const done = rows.filter(r => r.feedback).length;
+  $("sum").textContent = `${rows.length} קריאות · ${types.length} סוגים · סימנת ${done}`;
+}
+function render(){
+  const t = $("type").value, v = $("verdict").value;
+  const shown = rows.filter(r => (!t || r.call_type === t) && (!v || (v === "none" ? !r.feedback : r.feedback && r.feedback.verdict === v)));
+  $("list").innerHTML = shown.length ? "" : `<div class="empty">אין קריאות שמתאימות לסינון.</div>`;
+  for (const r of shown) $("list").appendChild(card(r));
+}
+function card(r){
+  const el = document.createElement("article"); el.className = "call";
+  el.innerHTML = `
+    <div class="meta"><span class="badge">${r.call_type}</span><span>אורך <b>${fmt(r.duration_s)}</b> שנ׳</span>
+      <span>גבולות <b dir="ltr">${fmt(r.onset_s)}–${fmt(r.offset_s)}</b></span><span>בולטות <b>${fmt(r.rise_db, 0)}</b> dB</span>
+      <span>שיא <b>${fmt(r.peak_freq_hz / 1000, 1)}</b> kHz</span><code>${r.donor_id}</code></div>
+    <img loading="lazy" alt="ספקטרוגרמה של ${r.donor_id}" src="${api(`api/donor_spec/${r.donor_id}`)}">
+    <div class="plays"><label>הקריאה לבד<audio controls preload="none" src="${api(`api/donor_audio/${r.donor_id}`, {part: "call"})}"></audio></label>
+      <label>הקליפ המלא<audio controls preload="none" src="${api(`api/donor_audio/${r.donor_id}`, {part: "clip"})}"></audio></label></div>
+    <div class="verdicts">${VERDICTS.map(([v, t]) => `<button type="button" data-v="${v}">${t}</button>`).join("")}
+      <input placeholder="הערה (לא חובה)"><span class="saved"></span></div>`;
+  const btns = el.querySelectorAll(".verdicts button"), note = el.querySelector(".verdicts input"), saved = el.querySelector(".saved");
+  note.value = r.feedback && r.feedback.note || "";
+  let cur = r.feedback ? r.feedback.verdict : null;
+  const paint = () => btns.forEach(b => b.classList.toggle("on", b.dataset.v === cur));
+  const save = async () => {
+    const res = await fetch(api("api/donor_feedback"), {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({donor_id: r.donor_id, verdict: cur, note: note.value})});
+    saved.textContent = res.ok ? "נשמר" : "השמירה נכשלה: בדוק שהשרת עדיין רץ";
+    r.feedback = cur || note.value ? {verdict: cur, note: note.value} : null;
+    summary();
+    setTimeout(() => saved.textContent = "", 1500);
+  };
+  btns.forEach(b => b.onclick = () => { cur = cur === b.dataset.v ? null : b.dataset.v; paint(); save(); });
+  note.onchange = save;
+  paint();
+  return el;
+}
+$("type").onchange = render; $("verdict").onchange = render;
+fetch(api("api/donors")).then(r => r.json()).then(d => {
+  rows = d;
+  for (const t of [...new Set(rows.map(r => r.call_type))]) $("type").insertAdjacentHTML("beforeend", `<option value="${t}">${t}</option>`);
+  summary(); render();
+}).catch(() => { $("list").innerHTML = `<div class="empty">אין גישה לרשימה. פתח את הכתובת שהשרת הדפיס, עם <code>?t=…</code>, ובדוק שהשרת הופעל עם <code>--donors</code>.</div>`; });
+</script>
+</body>
+</html>

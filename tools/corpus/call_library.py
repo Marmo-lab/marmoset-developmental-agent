@@ -10,6 +10,9 @@ spectrograms on one scale, and records verdicts.
 ``?m=map_c3`` picks a sub-map): click a point to hear it; names given to a map's clusters go
 to ``RUN/call_map/names.json`` for ``map``, ``names_<map>.json`` for the others.
 
+``--donors DIR`` adds ``/donors``: the donor calls of ``tools/synth/donor_calls.py`` (whole clip,
+proposed call bounds, the call alone), with verdicts in ``DIR/donor_feedback.jsonl``.
+
 Verdicts are appended to ``RUN/library_feedback.jsonl`` (one JSON object per click; the
 last one per call wins), so Claude can read them from the run directory.
 
@@ -17,7 +20,7 @@ Every request must carry the token printed at start-up (``?t=...``): on the clus
 server listens on a compute node that other users can reach.
 
 Usage:
-    python tools/corpus/call_library.py RUN [--port 8765] [--host 127.0.0.1] [--all]
+    python tools/corpus/call_library.py RUN [--port 8765] [--host 127.0.0.1] [--all] [--donors DIR]
     (--all: every recording, not only the cleaned ones)
 On the cluster: tools/cluster/call_library.sbatch, then an SSH tunnel; see its header.
 """
@@ -133,24 +136,60 @@ class Library:
             return f.read(int(round(c["audio_duration_s"] * sr)), dtype="float32"), sr
 
     def feedback(self) -> Dict[str, Dict]:
-        out: Dict[str, Dict] = {}
-        if self.feedback_path.exists():
-            for line in self.feedback_path.read_text().splitlines():
-                try:
-                    d = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if d.get("verdict") is None and not d.get("note"):
-                    out.pop(d["call_id"], None)
-                else:
-                    out[d["call_id"]] = d
-        return out
+        return _read_feedback(self.feedback_path, "call_id")
 
     def add_feedback(self, d: Dict) -> None:
-        d = {"call_id": d["call_id"], "verdict": d.get("verdict"), "note": d.get("note", ""),
-             "time": dt.datetime.now().isoformat(timespec="seconds")}
-        with self.lock, open(self.feedback_path, "a") as f:
-            f.write(json.dumps(d, ensure_ascii=False) + "\n")
+        _append_feedback(self.feedback_path, self.lock, "call_id", d)
+
+
+class Donors:
+    """The donor calls of ``tools/synth/donor_calls.py``: ``DIR/donors.tsv`` and ``DIR/audio/<donor_id>.flac``."""
+
+    def __init__(self, folder: Path) -> None:
+        self.folder = folder
+        self.rows: List[Dict] = []
+        for r in csv.DictReader(open(folder / "donors.tsv"), delimiter="\t"):
+            self.rows.append({k: (v if k in ("donor_id", "call_type", "source") else float(v)) for k, v in r.items()})
+        self.by_id = {r["donor_id"]: r for r in self.rows}
+        self.feedback_path = folder / "donor_feedback.jsonl"
+        self.lock = threading.Lock()
+
+    def audio(self, donor_id: str, part: str) -> Tuple[np.ndarray, int]:
+        """The whole clip, or (``part="call"``) the call alone between its bounds."""
+        r = self.by_id[donor_id]
+        x, sr = sf.read(self.folder / "audio" / f"{donor_id}.flac", dtype="float32")
+        if part == "call":
+            x = x[int(r["onset_s"] * sr):int(r["offset_s"] * sr)]
+        return x, sr
+
+    def feedback(self) -> Dict[str, Dict]:
+        return _read_feedback(self.feedback_path, "donor_id")
+
+    def add_feedback(self, d: Dict) -> None:
+        _append_feedback(self.feedback_path, self.lock, "donor_id", d)
+
+
+def _read_feedback(path: Path, key: str) -> Dict[str, Dict]:
+    """The last verdict per item from a JSONL log; an empty verdict with no note clears it."""
+    out: Dict[str, Dict] = {}
+    if path.exists():
+        for line in path.read_text().splitlines():
+            try:
+                d = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if d.get("verdict") is None and not d.get("note"):
+                out.pop(d[key], None)
+            else:
+                out[d[key]] = d
+    return out
+
+
+def _append_feedback(path: Path, lock: threading.Lock, key: str, d: Dict) -> None:
+    d = {key: d[key], "verdict": d.get("verdict"), "note": d.get("note", ""),
+         "time": dt.datetime.now().isoformat(timespec="seconds")}
+    with lock, open(path, "a") as f:
+        f.write(json.dumps(d, ensure_ascii=False) + "\n")
 
 
 @lru_cache(maxsize=2048)
@@ -175,6 +214,27 @@ def _spectrogram_png(lib_id: int, call_id: str, version: str) -> bytes:
     return buf.getvalue()
 
 
+@lru_cache(maxsize=1024)
+def _donor_png(donor_id: str) -> bytes:
+    """The whole clip's spectrogram, 0-24 kHz, with the proposed call bounds."""
+    x, sr = DONORS[0].audio(donor_id, "clip")
+    r = DONORS[0].by_id[donor_id]
+    f, t, s = signal.stft(x, sr, nperseg=1024, noverlap=784)
+    p = 20 * np.log10(np.abs(s) + 1e-12)
+    fig = plt.figure(figsize=(5.2, 2.0), dpi=80)
+    ax = fig.add_axes([0.06, 0.12, 0.93, 0.85])
+    ax.imshow(p - p.max(), origin="lower", aspect="auto", cmap="magma", vmin=-70, vmax=0,
+              extent=[0, len(x) / sr, 0, sr / 2000])
+    for edge in (r["onset_s"], r["offset_s"]):
+        ax.axvline(edge, color="#4fc1b8", lw=1.1)
+    ax.set_yticks([0, 5, 10, 15, 20])
+    ax.tick_params(labelsize=6, colors="#555")
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png")
+    plt.close(fig)
+    return buf.getvalue()
+
+
 def _wav(x: np.ndarray, sr: int) -> bytes:
     buf = io.BytesIO()
     sf.write(buf, 0.8 * x / (np.abs(x).max() + 1e-12), sr, format="WAV", subtype="PCM_16")
@@ -182,6 +242,7 @@ def _wav(x: np.ndarray, sr: int) -> bytes:
 
 
 LIBS: List[Library] = []
+DONORS: List[Donors] = []
 MAP_NAME = re.compile(r"map(_c\d+)*")
 
 
@@ -251,6 +312,17 @@ def make_handler(lib_id: int, token: str):
                 elif path == "/api/map_names":
                     names = _names_path(lib.run, _map_name(q))
                     self._send(names.read_bytes() if names.exists() else b"{}", "application/json")
+                elif path == "/donors":
+                    self._send((HERE / "donors.html").read_bytes(), "text/html; charset=utf-8")
+                elif path == "/api/donors":
+                    fb = DONORS[0].feedback()
+                    self._send(json.dumps([{**r, "feedback": fb.get(r["donor_id"])} for r in DONORS[0].rows]).encode(),
+                               "application/json")
+                elif path.startswith("/api/donor_audio/"):
+                    x, sr = DONORS[0].audio(path.split("/")[-1], q.get("part", "clip"))
+                    self._send(_wav(x, sr), "audio/wav", cache=True)
+                elif path.startswith("/api/donor_spec/"):
+                    self._send(_donor_png(path.split("/")[-1]), "image/png", cache=True)
                 elif path == "/api/meta":
                     self._send(json.dumps(lib.meta()).encode(), "application/json")
                 elif path == "/api/calls":
@@ -262,7 +334,7 @@ def make_handler(lib_id: int, token: str):
                     self._send(_spectrogram_png(lib_id, path.split("/")[-1], q.get("v", "orig")), "image/png", cache=True)
                 else:
                     self._send(b"not found", "text/plain", 404)
-            except (KeyError, FileNotFoundError) as e:
+            except (KeyError, IndexError, FileNotFoundError) as e:
                 self._send(f"not found: {e}".encode(), "text/plain", 404)
 
         def do_POST(self) -> None:
@@ -274,6 +346,14 @@ def make_handler(lib_id: int, token: str):
                     int(self.headers.get("Content-Length", 0)))).items()}
                 with lib.lock:
                     _names_path(lib.run, _map_name(q)).write_text(json.dumps(names, ensure_ascii=False, indent=1))
+                self._send(b'{"ok":true}', "application/json")
+                return
+            if urlparse(self.path).path == "/api/donor_feedback" and DONORS:
+                d = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                if d.get("donor_id") not in DONORS[0].by_id:
+                    self._send(b"unknown donor", "text/plain", 400)
+                    return
+                DONORS[0].add_feedback(d)
                 self._send(b'{"ok":true}', "application/json")
                 return
             if urlparse(self.path).path != "/api/feedback":
@@ -297,8 +377,12 @@ def main() -> None:
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--all", action="store_true", help="every recording, not only the cleaned ones")
     ap.add_argument("--token", help="fixed access token (default: random)")
+    ap.add_argument("--donors", type=Path, help="donor-call folder of tools/synth/donor_calls.py, served at /donors")
     a = ap.parse_args()
     LIBS.append(Library(Path(a.run), a.all))
+    if a.donors:
+        DONORS.append(Donors(a.donors))
+        print(f"{len(DONORS[0].rows)} donor calls at /donors", flush=True)
     token = a.token or secrets.token_urlsafe(12)
     lib = LIBS[0]
     print(f"{len(lib.calls)} calls from {len(set(c['recording_id'] for c in lib.calls))} recordings", flush=True)
