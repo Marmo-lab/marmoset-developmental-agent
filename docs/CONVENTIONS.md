@@ -21,7 +21,8 @@ tools/
   build_manifest.py, sweep_units.py
   analysis/                     verify_talia_port (the port gate), score_detectors, train_call_detector,
                                 score_testset (detector evaluation); level_audit, aggregate_levels,
-                                channel_eval, call_inventory (one-off audits, kept as provenance)
+                                channel_eval, call_inventory (one-off audits, kept as provenance);
+                                calls_per_hour, synth_figures, synth_shift_probe, find_short_high (synthetic evaluation)
   labels/                       make_clips, make_guide, import_audacity, review_labels, phone_server (hand-label workflow, see LABELING.md)
   corpus/                       the production path, in order: detect_corpus (array job: per-recording call
                                 catalogue + call audio) -> merge_calls (chronological calls.tsv / calls_train.tsv)
@@ -31,6 +32,7 @@ tools/
   synth/                        synthetic evaluation (SYNTH_EVAL.md, SYNTH_METHODS.md): donor_calls -> backgrounds
                                 -> generate
   cluster/                      env.sh, setup_env.sh, *.sbatch (ELSC SLURM jobs)
+analysis/                       results worth keeping, small, with what produced them (analysis/README.md)
 figures/                        figures worth keeping, with their data and redraw command (figures/README.md)
 docs/                           ROADMAP, OPEN_DECISIONS, SESSION_STATE, DETECTOR_EVAL, LABELING, CODEMAP; audit/ = GmSLM code audit
 data/labels/                    hand labels (calibration: handlabels.csv, held-out: heldout_labels.csv)

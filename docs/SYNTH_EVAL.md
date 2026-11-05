@@ -37,8 +37,9 @@ same folder): long labelled recordings from other setups, a test of generalizati
 ## Results
 
 ### v1, night background (2026-11-05)
-1,800 one-minute recordings (300 per SNR level), 36,701 planted calls, raw donors.
-`$WORK_DIR/synth/sets/v1/scores.{json,png}`. Front-end view, main matching
+1,800 one-minute recordings (300 per SNR level), 36,701 planted calls, raw donors. Results in
+`analysis/synth_eval/v1/` (figures: `figures/synth_v1_*.png`; 95% bootstrap intervals over
+recordings are within ±0.012 of every recall and precision below). Front-end view, main matching
 (IoU >= 0.5; phee, twitter and trill by overlap):
 
 | SNR (dB) | +20 | +10 | +6 | +3.5 | 0 | -3 |
@@ -53,7 +54,7 @@ non-phee calls (chirp, alarm) fail IoU. By type at +20 dB: phees and loud shrill
 chirps are found but cut short or split).
 
 ### Why the short high calls are missed (probe, 2026-11-05)
-Scratch probe: every donor planted alone in 20 s of night background at +20 and +6 dB; the
+`tools/analysis/synth_shift_probe.py` (`figures/synth_v1_frequency_shift.png`): every donor planted alone in 20 s of night background at +20 and +6 dB; the
 detector's maximum call probability inside the call.
 - **Hand labels.** Of 761 labels (calibration, held-out, test), none is both shorter than
   0.2 s and peaked above 12 kHz (5-20 kHz band). 7 are shorter than 0.2 s, 6 peak above
@@ -67,3 +68,16 @@ detector's maximum call probability inside the call.
   tsik 0.11 / 0.15 / 0.19 / 0.30, tsik-ek 0.13 / 0.13 / 0.20 / 0.20, seep 0.23 / 0.27 / 0.30 / 0.37.
 - **Open:** whether our colony produces such calls (and the labeller did not hear or mark
   them) or rarely does. Not separable from the labels alone.
+
+### Search for short high calls in our recordings (2026-11-05, running)
+`tools/analysis/find_short_high.py`: a plain energy rule, independent of the learned detector
+(11.5-20 kHz at least 15 dB above its median and 8 dB above the call band, 0.03-0.5 s).
+Selftest on v1 (+20 / +6 dB): it finds tsik 0.68 / 0.65, tsik-ek 0.93 / 0.80, seep 0.81 /
+0.74, twitter 0.46 / 0.21, every other type at most 0.11, and no false alarm on the night
+background. Scan: 60 day recordings (07:00-17:59) of v4; the strongest candidates are cut
+to 2 s clips for the library's `/short_high` page, where the user listens.
+
+If the colony does make them, the plan (user, 2026-11-05): fine-tune the detector on a small
+share of synthetic recordings so it meets these calls, then rerun the evaluation on the
+rest. The donors must be split between the two shares (a donor heard in training would make
+the test easy), and the test recordings must not share a background minute with training.

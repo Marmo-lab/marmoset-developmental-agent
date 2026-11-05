@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from tools.synth.score import detect, match_iou, quality, score, score_recording, split_ok
@@ -38,3 +39,17 @@ def test_detect_and_score_a_small_set(tmp_path: Path, monkeypatch: pytest.Monkey
     assert set(s["views"]) == {"detector", "front_end"}
     assert set(s["views"]["front_end"]["by_snr"]) == {"1.5", "1.0"}
     assert (folder / "scores.png").exists() and json.loads((folder / "scores.json").read_text())["n_recordings"] == 4
+
+
+def test_figures_of_a_small_set(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from tools.analysis import synth_figures as sf_
+    test_detect_and_score_a_small_set(tmp_path, monkeypatch)
+    folder = tmp_path / "out"
+    rows = sf_.per_recording(folder)
+    assert len(rows) == 4 and sum(r["n_calls"] for r in rows) == sum(1 for _ in open(folder / "events.tsv")) - 1
+    b = sf_.bootstrap(rows)
+    assert set(b) == {1.5, 1.0} and all(lo <= est <= hi for v in b.values() for est, lo, hi in v.values())
+    sf_.snr_curve(folder, tmp_path / "curve.png")
+    sf_.recall_by_type(folder, tmp_path / "types.png")
+    assert (tmp_path / "curve.png").exists() and (tmp_path / "types.png").exists()
+    assert sf_._db(20 * np.log10(1.5)) == "+3.5" and sf_._db(20 * np.log10(0.7)) == "-3"
