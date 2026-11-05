@@ -82,7 +82,7 @@ function summary(){
   const med = a => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
   $("types").innerHTML = `<tr><th>סוג</th><th>קריאות</th><th>אורך חציוני</th><th>בולטות חציונית</th>${VERDICTS.map(([, t]) => `<th>${t}</th>`).join("")}</tr>` +
     types.map(t => { const rs = rows.filter(r => r.call_type === t);
-      return `<tr class="pick" data-t="${t}"><td><b>${t}</b></td><td>${rs.length}</td><td>${fmt(med(rs.map(r => r.duration_s)))} שנ׳</td><td>${fmt(med(rs.map(r => r.rise_db)), 0)} dB</td>${VERDICTS.map(([v]) => `<td>${count(t, v) || ""}</td>`).join("")}</tr>`; }).join("");
+      return `<tr class="pick" data-t="${t}"><td><b dir="ltr">${t}</b></td><td>${rs.length}</td><td>${fmt(med(rs.map(r => r.duration_s)))} שנ׳</td><td>${fmt(med(rs.map(r => r.rise_db)), 0)} dB</td>${VERDICTS.map(([v]) => `<td>${count(t, v) || ""}</td>`).join("")}</tr>`; }).join("");
   $("types").querySelectorAll("tr.pick").forEach(tr => tr.onclick = () => { $("type").value = tr.dataset.t; render(); });
   const done = rows.filter(r => r.feedback).length;
   $("sum").textContent = `${rows.length} קריאות · ${types.length} סוגים · סימנת ${done}`;
@@ -96,7 +96,7 @@ function render(){
 function card(r){
   const el = document.createElement("article"); el.className = "call";
   el.innerHTML = `
-    <div class="meta"><span class="badge">${r.call_type}</span><span>אורך <b>${fmt(r.duration_s)}</b> שנ׳</span>
+    <div class="meta"><span class="badge" dir="ltr">${r.call_type}</span><span>אורך <b>${fmt(r.duration_s)}</b> שנ׳</span>
       <span>גבולות <b dir="ltr">${fmt(r.onset_s)}–${fmt(r.offset_s)}</b></span><span>בולטות <b>${fmt(r.rise_db, 0)}</b> dB</span>
       <span>שיא <b>${fmt(r.peak_freq_hz / 1000, 1)}</b> kHz</span><code>${r.donor_id}</code></div>
     <img loading="lazy" alt="ספקטרוגרמה של ${r.donor_id}" src="${api(`api/donor_spec/${r.donor_id}`)}">
