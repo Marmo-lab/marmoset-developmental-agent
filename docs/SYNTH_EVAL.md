@@ -33,3 +33,37 @@ standard. Agreed with the user 2026-11-05; each step ends with a listening check
 ## Later
 The same with other labs' marmoset data (Landman 2017, Feng 2019, the "Dialects" set in the
 same folder): long labelled recordings from other setups, a test of generalization.
+
+## Results
+
+### v1, night background (2026-11-05)
+1,800 one-minute recordings (300 per SNR level), 36,701 planted calls, raw donors.
+`$WORK_DIR/synth/sets/v1/scores.{json,png}`. Front-end view, main matching
+(IoU >= 0.5; phee, twitter and trill by overlap):
+
+| SNR (dB) | +20 | +10 | +6 | +3.5 | 0 | -3 |
+|---|---|---|---|---|---|---|
+| recall | 0.54 | 0.47 | 0.43 | 0.39 | 0.32 | 0.23 |
+| precision | 0.91 | 0.94 | 0.96 | 0.96 | 0.90 | 0.86 |
+| false alarms / h | 0.2 | 0 | 0 | 0 | 0 | 0 |
+
+Overlap precision is 1.00 at every level; main precision is lower because pieces of split
+non-phee calls (chirp, alarm) fail IoU. By type at +20 dB: phees and loud shrill 1.00, twitter
+0.87, trill 0.53, alarm 0.45, seep 0.13, tsik 0.09, tsik-ek 0.05, chirp 0.03 (overlap 0.48:
+chirps are found but cut short or split).
+
+### Why the short high calls are missed (probe, 2026-11-05)
+Scratch probe: every donor planted alone in 20 s of night background at +20 and +6 dB; the
+detector's maximum call probability inside the call.
+- **Hand labels.** Of 761 labels (calibration, held-out, test), none is both shorter than
+  0.2 s and peaked above 12 kHz (5-20 kHz band). 7 are shorter than 0.2 s, 6 peak above
+  12 kHz. Label duration p5 is 0.25 s. The detector never saw a tsik-like call as a call.
+- **Frequency is part of it, not all.** Shifting other calls up 5 kHz (single-sideband, to
+  12.6-13.5 kHz) cuts detection at +20 dB: twitter 0.90 to 0.33, chirp 0.63 to 0.17, loud
+  shrill 1.00 to 0.41; phees hold (0.60-0.93). Shifting tsik, tsik-ek and seep down 5 kHz (to
+  8-9 kHz, the usual call band) does not rescue them (0.07-0.30). Their short, sweeping shape
+  is itself outside what the detector learned.
+- **The threshold is not the cause.** At +20 dB, found at threshold 0.5 / 0.3 / 0.2 / 0.1:
+  tsik 0.11 / 0.15 / 0.19 / 0.30, tsik-ek 0.13 / 0.13 / 0.20 / 0.20, seep 0.23 / 0.27 / 0.30 / 0.37.
+- **Open:** whether our colony produces such calls (and the labeller did not hear or mark
+  them) or rarely does. Not separable from the labels alone.
