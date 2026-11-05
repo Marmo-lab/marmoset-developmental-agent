@@ -63,3 +63,15 @@ def test_scan_and_select(run: Path) -> None:
     picked = [c["recording_id"] for c in r["candidates"] if c["selected"]]
     assert picked == ["n1"]                      # call-free, and its level matches the day background (n2 is quieter)
     assert (out / "png" / "n1.png").exists()
+
+
+def test_library_serves_the_candidates(run: Path) -> None:
+    from tools.corpus.call_library import Backgrounds
+    test_scan_and_select(run)
+    lib = Backgrounds(run / "out")
+    assert [r["recording_id"] for r in lib.rows] == ["n1"] and "level_db" not in lib.rows[0]
+    x, sr = lib.audio("n1", 2.0, 3.0)
+    assert sr == SR and x.shape == (3 * SR,)
+    lib.add_feedback({"recording_id": "n1", "verdict": "approve", "note": ""})
+    from tools.synth.generate import approved
+    assert [c["recording_id"] for c in approved(run / "out")] == ["n1"]

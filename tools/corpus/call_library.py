@@ -12,6 +12,9 @@ to ``RUN/call_map/names.json`` for ``map``, ``names_<map>.json`` for the others.
 
 ``--donors DIR`` adds ``/donors``: the donor calls of ``tools/synth/donor_calls.py`` (whole clip,
 proposed call bounds, the call alone), with verdicts in ``DIR/donor_feedback.jsonl``.
+``--backgrounds DIR`` adds ``/backgrounds``: the night candidates of ``tools/synth/backgrounds.py``
+(the hour's long-term spectrum; any 15 s of it, the 4-capsule mean, played from the raw file),
+with verdicts in ``DIR/bg_feedback.jsonl``.
 
 Verdicts are appended to ``RUN/library_feedback.jsonl`` (one JSON object per click; the
 last one per call wins), so Claude can read them from the run directory.
@@ -20,7 +23,7 @@ Every request must carry the token printed at start-up (``?t=...``): on the clus
 server listens on a compute node that other users can reach.
 
 Usage:
-    python tools/corpus/call_library.py RUN [--port 8765] [--host 127.0.0.1] [--all] [--donors DIR]
+    python tools/corpus/call_library.py RUN [--port 8765] [--host 127.0.0.1] [--all] [--donors DIR] [--backgrounds DIR]
     (--all: every recording, not only the cleaned ones)
 On the cluster: tools/cluster/call_library.sbatch, then an SSH tunnel; see its header.
 """
@@ -169,6 +172,35 @@ class Donors:
         _append_feedback(self.feedback_path, self.lock, "donor_id", d)
 
 
+class Backgrounds:
+    """The background candidates of ``tools/synth/backgrounds.py``: ``DIR/candidates.json`` and ``DIR/png/``."""
+
+    MAX_S = 30.0
+
+    def __init__(self, folder: Path) -> None:
+        self.folder = folder
+        data = json.loads((folder / "candidates.json").read_text())
+        self.info = {k: v for k, v in data.items() if k != "candidates"}
+        self.rows = [{k: v for k, v in c.items() if k != "level_db"} for c in data["candidates"] if c["selected"]]
+        self.by_id = {r["recording_id"]: r for r in self.rows}
+        self.feedback_path = folder / "bg_feedback.jsonl"
+        self.lock = threading.Lock()
+
+    def audio(self, rid: str, start_s: float, dur_s: float) -> Tuple[np.ndarray, int]:
+        """``dur_s`` (at most ``MAX_S``) of the raw recording from ``start_s``, as the 4-capsule mean."""
+        path = self.by_id[rid]["path"]
+        sr = sf.info(path).samplerate
+        with sf.SoundFile(path) as f:
+            f.seek(max(0, int(start_s * sr)))
+            return f.read(int(min(dur_s, self.MAX_S) * sr), dtype="float32", always_2d=True).mean(axis=1), sr
+
+    def feedback(self) -> Dict[str, Dict]:
+        return _read_feedback(self.feedback_path, "recording_id")
+
+    def add_feedback(self, d: Dict) -> None:
+        _append_feedback(self.feedback_path, self.lock, "recording_id", d)
+
+
 def _read_feedback(path: Path, key: str) -> Dict[str, Dict]:
     """The last verdict per item from a JSONL log; an empty verdict with no note clears it."""
     out: Dict[str, Dict] = {}
@@ -243,6 +275,7 @@ def _wav(x: np.ndarray, sr: int) -> bytes:
 
 LIBS: List[Library] = []
 DONORS: List[Donors] = []
+BACKGROUNDS: List[Backgrounds] = []
 MAP_NAME = re.compile(r"map(_c\d+)*")
 
 
@@ -323,6 +356,21 @@ def make_handler(lib_id: int, token: str):
                     self._send(_wav(x, sr), "audio/wav", cache=True)
                 elif path.startswith("/api/donor_spec/"):
                     self._send(_donor_png(path.split("/")[-1]), "image/png", cache=True)
+                elif path == "/backgrounds":
+                    self._send((HERE / "backgrounds.html").read_bytes(), "text/html; charset=utf-8")
+                elif path == "/api/backgrounds":
+                    bgs = BACKGROUNDS[0]
+                    fb = bgs.feedback()
+                    self._send(json.dumps({**bgs.info, "rows": [{**r, "feedback": fb.get(r["recording_id"])}
+                                                                 for r in bgs.rows]}).encode(), "application/json")
+                elif path.startswith("/api/bg_audio/"):
+                    x, sr = BACKGROUNDS[0].audio(path.split("/")[-1], float(q.get("start", 0)), float(q.get("dur", 15)))
+                    self._send(_wav(x, sr), "audio/wav", cache=True)
+                elif path.startswith("/api/bg_png/"):
+                    rid = path.split("/")[-1]
+                    if rid not in BACKGROUNDS[0].by_id:  # only the candidates' images, never a path from the URL
+                        raise KeyError(rid)
+                    self._send((BACKGROUNDS[0].folder / "png" / f"{rid}.png").read_bytes(), "image/png", cache=True)
                 elif path == "/api/meta":
                     self._send(json.dumps(lib.meta()).encode(), "application/json")
                 elif path == "/api/calls":
@@ -346,6 +394,14 @@ def make_handler(lib_id: int, token: str):
                     int(self.headers.get("Content-Length", 0)))).items()}
                 with lib.lock:
                     _names_path(lib.run, _map_name(q)).write_text(json.dumps(names, ensure_ascii=False, indent=1))
+                self._send(b'{"ok":true}', "application/json")
+                return
+            if urlparse(self.path).path == "/api/bg_feedback" and BACKGROUNDS:
+                d = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                if d.get("recording_id") not in BACKGROUNDS[0].by_id:
+                    self._send(b"unknown recording", "text/plain", 400)
+                    return
+                BACKGROUNDS[0].add_feedback(d)
                 self._send(b'{"ok":true}', "application/json")
                 return
             if urlparse(self.path).path == "/api/donor_feedback" and DONORS:
@@ -378,11 +434,15 @@ def main() -> None:
     ap.add_argument("--all", action="store_true", help="every recording, not only the cleaned ones")
     ap.add_argument("--token", help="fixed access token (default: random)")
     ap.add_argument("--donors", type=Path, help="donor-call folder of tools/synth/donor_calls.py, served at /donors")
+    ap.add_argument("--backgrounds", type=Path, help="folder of tools/synth/backgrounds.py, served at /backgrounds")
     a = ap.parse_args()
     LIBS.append(Library(Path(a.run), a.all))
     if a.donors:
         DONORS.append(Donors(a.donors))
         print(f"{len(DONORS[0].rows)} donor calls at /donors", flush=True)
+    if a.backgrounds:
+        BACKGROUNDS.append(Backgrounds(a.backgrounds))
+        print(f"{len(BACKGROUNDS[0].rows)} background candidates at /backgrounds", flush=True)
     token = a.token or secrets.token_urlsafe(12)
     lib = LIBS[0]
     print(f"{len(lib.calls)} calls from {len(set(c['recording_id'] for c in lib.calls))} recordings", flush=True)

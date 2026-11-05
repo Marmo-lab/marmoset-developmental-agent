@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>רקעי לילה</title>
+<style>
+/* Layout: one card per candidate hour; its long-term spectrum is the seek bar for 15 s excerpts. */
+:root{
+  --bg:#f3f5f4; --card:#ffffff; --ink:#1d282c; --muted:#5d6b70; --rule:#d9e0de; --accent:#0b7a75; --accent-soft:#e1f0ee;
+  --ok:#2e7d32; --bad:#c62828;
+  --font:"Assistant","Arial Hebrew",Arial,sans-serif; --mono:ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#121819;--card:#1a2224;--ink:#e2eae8;--muted:#9aaeb0;--rule:#2b3739;--accent:#4fc1b8;--accent-soft:#163030;
+        --ok:#7cc47f;--bad:#ef7b7b;color-scheme:dark}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.5}
+header{background:var(--card);border-bottom:1px solid var(--rule);padding:10px max(16px,2vw);display:flex;flex-direction:column;gap:6px}
+h1{margin:0;font-size:1.25rem}
+.sum{color:var(--muted);font-size:.9rem;max-width:70rem}
+main{padding:14px max(16px,2vw);display:flex;flex-direction:column;gap:14px;max-width:1300px;margin:0 auto}
+.cand{background:var(--card);border:1px solid var(--rule);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.meta{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:.88rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.meta b{color:var(--ink);font-weight:600}
+.spec{position:relative;cursor:crosshair}
+.spec img{width:100%;display:block;border-radius:4px;background:var(--bg)}
+.spec .mark{position:absolute;top:0;bottom:0;width:2px;background:#4fc1b8;pointer-events:none;display:none}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.row span{font-size:.8rem;color:var(--muted)}
+button{font:inherit;cursor:pointer;border:1px solid var(--rule);background:var(--bg);color:var(--ink);border-radius:5px;padding:3px 10px;font-size:.85rem}
+audio{height:32px;min-width:16rem;flex:1}
+.verdicts button.on[data-v=approve]{background:var(--ok);color:#fff;border-color:var(--ok)}
+.verdicts button.on[data-v=reject]{background:var(--bad);color:#fff;border-color:var(--bad)}
+.verdicts button.on[data-v=unsure]{background:var(--muted);color:#fff;border-color:var(--muted)}
+.verdicts input{flex:1;min-width:12rem;font:inherit;font-size:.85rem;padding:3px 6px;border:1px solid var(--rule);border-radius:5px;background:var(--bg);color:var(--ink)}
+.saved{font-size:.75rem;color:var(--ok)}
+.empty{color:var(--muted);padding:30px;text-align:center}
+code{font-family:var(--mono);font-size:.8em;direction:ltr;unicode-bidi:isolate}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+</head>
+<body>
+<header>
+  <h1>רקעי לילה מועמדים</h1>
+  <div class="sum" id="sum">טוען…</div>
+  <div class="sum">לכל שעה: הספקטרוגרמה של השעה כולה (0–24 kHz, זמן בדקות). <b>לחיצה על הספקטרוגרמה מנגנת 15 שניות מאותה נקודה.</b> הכפתורים מנגנים קטעים קבועים. מה שנשמע הוא הממוצע של ארבעת המיקרופונים, בדיוק מה שהגלאי שומע.</div>
+</header>
+<main id="list"><div class="empty">טוען…</div></main>
+<script>
+const T = new URLSearchParams(location.search).get("t") || "";
+const api = (p, q = {}) => `${p}?${new URLSearchParams({...q, t: T})}`;
+const $ = id => document.getElementById(id);
+const VERDICTS = [["approve","✓ מאשר כרקע"],["reject","✗ לא מתאים"],["unsure","? לא בטוח"]];
+const PRESETS = [5, 20, 35, 50];
+
+function card(r){
+  const el = document.createElement("article"); el.className = "cand";
+  const t = r.start_time.replace("T", " ").slice(0, 16);
+  el.innerHTML = `
+    <div class="meta"><b dir="ltr">${t}</b><span>אורך <b>${(r.duration_s / 60).toFixed(0)}</b> דק׳</span>
+      <span>רמת רקע חציונית <b>${r.level_med_db}</b> dB <span dir="ltr">(${r.level_p5_db} … ${r.level_p95_db})</span></span>
+      <span>זיהויים בסף נמוך <b>${r.n_low}</b></span><code>${r.recording_id}</code></div>
+    <div class="spec"><img loading="lazy" alt="ספקטרוגרמה של שעת ההקלטה" src="${api(`api/bg_png/${r.recording_id}`)}"><div class="mark"></div></div>
+    <div class="row"><span>קטעים:</span>${PRESETS.map(m => `<button type="button" data-m="${m}">דקה ${m}</button>`).join("")}
+      <audio controls preload="none"></audio><span class="now"></span></div>
+    <div class="row verdicts">${VERDICTS.map(([v, l]) => `<button type="button" data-v="${v}">${l}</button>`).join("")}
+      <input placeholder="הערה (לא חובה)"><span class="saved"></span></div>`;
+  const audio = el.querySelector("audio"), mark = el.querySelector(".mark"), img = el.querySelector("img"), now = el.querySelector(".now");
+  const play = sec => {
+    sec = Math.max(0, Math.min(r.duration_s - 15, sec));
+    audio.src = api(`api/bg_audio/${r.recording_id}`, {start: sec.toFixed(1), dur: 15});
+    audio.play();
+    const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+    now.textContent = `מנגן מ־${m}:${String(s).padStart(2, "0")}`;
+    mark.style.display = "block";
+    mark.style.left = `calc(3.5% + ${96 * sec / r.duration_s}%)`;
+  };
+  img.parentElement.onclick = e => {
+    const box = img.getBoundingClientRect();
+    const frac = ((e.clientX - box.left) / box.width - 0.035) / 0.96;   // the plot area inside the image
+    play(Math.max(0, Math.min(1, frac)) * r.duration_s);
+  };
+  el.querySelectorAll("button[data-m]").forEach(b => b.onclick = () => play(60 * +b.dataset.m));
+  const btns = el.querySelectorAll(".verdicts button"), note = el.querySelector(".verdicts input"), saved = el.querySelector(".saved");
+  note.value = r.feedback && r.feedback.note || "";
+  let cur = r.feedback ? r.feedback.verdict : null;
+  const paint = () => btns.forEach(b => b.classList.toggle("on", b.dataset.v === cur));
+  const save = async () => {
+    const res = await fetch(api("api/bg_feedback"), {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({recording_id: r.recording_id, verdict: cur, note: note.value})});
+    saved.textContent = res.ok ? "נשמר" : "השמירה נכשלה: בדוק שהשרת עדיין רץ";
+    setTimeout(() => saved.textContent = "", 1500);
+  };
+  btns.forEach(b => b.onclick = () => { cur = cur === b.dataset.v ? null : b.dataset.v; paint(); save(); });
+  note.onchange = save;
+  paint();
+  return el;
+}
+fetch(api("api/backgrounds")).then(r => r.json()).then(d => {
+  $("sum").textContent = `${d.rows.length} שעות לילה שבהן הגלאי לא מצא אף קריאה גם בסף ${d.low_threshold}, ` +
+    `והרמה שלהן בפס הקריאות קרובה לרמת הרקע של היום (${d.day_ref_db} dB, מ־${d.n_day} הקלטות יום).`;
+  $("list").innerHTML = "";
+  for (const r of d.rows) $("list").appendChild(card(r));
+}).catch(() => { $("list").innerHTML = `<div class="empty">אין גישה לרשימה. פתח את הכתובת שהשרת הדפיס, עם <code>?t=…</code>, ובדוק שהשרת הופעל עם <code>--backgrounds</code>.</div>`; });
+</script>
+</body>
+</html>
