@@ -86,48 +86,62 @@ call-free. Any faint call left in it shows up as false alarms on day background 
 the two kinds are reported side by side. At least half of all synthetic recordings use
 night background.
 
-## 5. Synthesis
-- **Length** **[decided]**: 60 s per recording; mono, 48 kHz.
-- **Background excerpt** **[decided]**: 60 s from an approved background, starting at a
-  random offset. Where the excerpt runs past the end of the background, the background is
-  looped and the seam crossfaded **[open: 50 ms raised-cosine]**.
-- **Planted call** **[decided]**: the donor between its bounds (section 3), faded in and
-  out **[open: 5 ms raised-cosine]**, scaled by a gain *g*, and added to the background:
-  *y = b + g·s*.
-- **SNR** **[decided]**. Let *s* be the donor segment and *b* the background over the same
-  samples, both band-passed to 5–20 kHz **[open: filter, e.g. 4th-order Butterworth,
-  zero-phase]**. Then
+## 5. Synthesis **[done: code (`tools/synth/generate.py`, tested); pending: approved backgrounds, the run]**
+Parameters fixed with the user on 2026-11-05.
+- **Format**: 60 s per recording; mono, 48 kHz, written as 24-bit FLAC.
+- **Background excerpt**: approved backgrounds are first extracted once as mono files (the
+  4-capsule mean). Each recording takes one background at random and a 60 s excerpt at a
+  uniform random offset. A background is described by its usable spans: a night recording is
+  one span, the day background (4b) many short ones. When no span holds a full minute, random
+  spans are joined with 50 ms raised-cosine crossfades.
+- **Number of calls**: Poisson with mean 21.2 per minute. That is the daytime rate of the
+  v4 corpus: the mean over the hours 07:00–17:59 of the per-hour means over 138 dates,
+  1,271 detected calls per recorded hour (`figures/v4_calls_per_hour.png`). It counts every
+  detection, quality flags included.
+- **Call types**: each call draws its type uniformly over the 11 types, then a donor uniformly
+  within the type. Every type is therefore planted about equally often, whatever its number
+  of donors.
+- **Timing**: no two planted calls overlap. Consecutive calls are separated by at least
+  0.5 s: closer calls are a segmentation question, measured on the hand labels. Each call is
+  at least 0.5 s from either end of the recording.
+  - Given the calls' durations, the free time is split at sorted uniform random points, so
+    every non-overlapping arrangement is equally likely.
+  - A draw whose calls cannot fit is redrawn. Under these settings that happens when the
+    Poisson count and long phees coincide. It slightly favours short calls in very dense
+    draws, and the realised count is in the manifest.
+- **Planted call**: the donor between its bounds (section 3), with 5 ms raised-cosine ramps
+  at both ends, scaled by a gain *g* and added: *y = b + g·s*.
+- **SNR**: one level per recording. Let *bp* be a 4th-order Butterworth band-pass, 5–20 kHz,
+  applied forward and backward (zero phase). For each call, *g* is set so that
 
-  SNR = RMS(*g·s*) / RMS(*b*) as an amplitude ratio, or 20·log10 of that ratio in dB.
+  RMS(*bp*(*g·s*)) / RMS(*bp*(*b*)) = level,
 
-  *g* is set so that each call meets the target SNR. Levels, as amplitude ratio / dB:
+  with *b* the background under the call, *s* the faded donor, and RMS taken over the call's
+  samples. The level is an amplitude ratio. Levels, as amplitude ratio / dB:
 
   | ratio | 10 | 3.2 | 2 | 1.5 | 1 | 0.7 |
   |---|---|---|---|---|---|---|
   | dB | +20 | +10 | +6 | +3.5 | 0 | −3 |
 
-  1.5 is the user's starting point. The donor's own residual noise (its clip floor, at
-  least about 18 dB below the call for most types) adds slightly to RMS(*s*), so the
-  achieved SNR is marginally lower than nominal; the manifest records the achieved value.
-- **Count and timing** **[open]** (v4, 138 dates: the mean is about 1,000-1,600 detected calls per recorded hour from 07:00 to 17:59, i.e. about 17-27 per minute, and under 5 per hour from 20:00 to 04:59):
-  - The calls per recording follow the v4 rate (`calls_per_hour.py`). Which rate (the
-    daytime mean, or a distribution over hours) is open.
-  - Onsets are uniform at random, with no overlap between planted calls.
-  - Minimum spacing between calls and margin from the recording's edges: open.
-- **Call types** **[open]**: uniform over the 11 types, then uniform over donors within a
-  type (proposed), or proportional to the number of donors.
-- **SNR per recording** **[open]**: one level per recording (proposed: clean per-level
-  curves), or mixed.
-- **Noise events** (step 3) **[decided: kinds and two placements; open: rates and
-  levels]**. Door, speech, beep and the like are cut from our recordings and approved by
-  ear. They are planted both apart from calls (false-alarm test) and overlapping calls
-  (missed-call test).
-- **Scale** **[decided]**: about 300 recordings per SNR level, about 5 h per level. Ten
-  examples are approved by ear before mass generation.
-- **Manifest** **[decided]**. Every planted event is recorded with:
-  - recording, kind (call or noise), donor or noise id, call type;
-  - onset and offset (s), gain, target and achieved SNR;
-  - background id and offset, and the random seed.
+  The donor's own residual noise (its clip floor, at least about 18 dB below the call for most
+  types) is part of *s*, so the call proper sits marginally below the nominal level.
+- **Overall gain**: if a recording's peak exceeds 0.99 full scale, the whole recording is
+  scaled down. Background and calls are scaled together, so every SNR is unchanged; the
+  factor is recorded.
+- **Seeds**: recording *k* at level index *l* uses `numpy.random.default_rng([seed, l, k])`,
+  so any single recording can be regenerated alone.
+- **Scale**: 300 recordings per level (5 h) by default. Ten examples are approved by ear
+  before mass generation.
+- **Answer files**:
+  - `recordings.tsv`, per recording: SNR, background id, kind and offset, number of calls,
+    scale, seed.
+  - `events.tsv`, per planted call: onset and offset (s, including the 5 ms ramps), donor,
+    type, SNR, gain.
+- **Background kinds**: night only, until the day background is built (4b). At least half of
+  all recordings stay on night background.
+- **Noise events** (step 3) **[decided: kinds and two placements; open: rates and levels]**.
+  Door, speech, beep and the like are cut from our recordings and approved by ear. They are
+  planted both apart from calls (false-alarm test) and overlapping calls (missed-call test).
 
 ## 6. Scoring **[decided]**
 - **Detector**: production settings (learned detector, frame threshold 0.5, `merge_calls`

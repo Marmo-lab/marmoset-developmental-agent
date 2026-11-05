@@ -12,6 +12,7 @@ left out (too little audio for a rate). The mean is over the dates that recorded
 Usage:
     python tools/analysis/calls_per_hour.py aggregate RUN OUT.tsv
     python tools/analysis/calls_per_hour.py plot OUT.tsv FIG.png
+    (the v4 figure and its table are kept in figures/; see figures/README.md)
 """
 
 from __future__ import annotations

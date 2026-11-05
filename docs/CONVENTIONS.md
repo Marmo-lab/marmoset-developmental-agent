@@ -28,7 +28,10 @@ tools/
                                 -> clean_corpus (spectrally cleaned call audio); call_library (browser over a run);
                                 summarize_corpus (per-date / hour / quality / label check); merge_corpus (10 s chunk
                                 manifest, GmSLM comparison arm)
+  synth/                        synthetic evaluation (SYNTH_EVAL.md, SYNTH_METHODS.md): donor_calls -> backgrounds
+                                -> generate
   cluster/                      env.sh, setup_env.sh, *.sbatch (ELSC SLURM jobs)
+figures/                        figures worth keeping, with their data and redraw command (figures/README.md)
 docs/                           ROADMAP, OPEN_DECISIONS, SESSION_STATE, DETECTOR_EVAL, LABELING, CODEMAP; audit/ = GmSLM code audit
 data/labels/                    hand labels (calibration: handlabels.csv, held-out: heldout_labels.csv)
 references/                     git-ignored, read-only: upstream clones, Talia's code mirror, audit file index, her output sample
