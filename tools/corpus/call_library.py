@@ -15,6 +15,8 @@ proposed call bounds, the call alone), with verdicts in ``DIR/donor_feedback.jso
 ``--backgrounds DIR`` adds ``/backgrounds``: the night candidates of ``tools/synth/backgrounds.py``
 (the hour's long-term spectrum; any 15 s of it, the 4-capsule mean, played from the raw file),
 with verdicts in ``DIR/bg_feedback.jsonl``.
+``--synth DIR`` adds ``/synth``: a set of synthetic recordings of ``tools/synth/generate.py``
+(the minute, its spectrogram with the planted calls marked), with verdicts in ``DIR/synth_feedback.jsonl``.
 
 Verdicts are appended to ``RUN/library_feedback.jsonl`` (one JSON object per click; the
 last one per call wins), so Claude can read them from the run directory.
@@ -23,7 +25,7 @@ Every request must carry the token printed at start-up (``?t=...``): on the clus
 server listens on a compute node that other users can reach.
 
 Usage:
-    python tools/corpus/call_library.py RUN [--port 8765] [--host 127.0.0.1] [--all] [--donors DIR] [--backgrounds DIR]
+    python tools/corpus/call_library.py RUN [--port 8765] [--host 127.0.0.1] [--all] [--donors DIR] [--backgrounds DIR] [--synth DIR]
     (--all: every recording, not only the cleaned ones)
 On the cluster: tools/cluster/call_library.sbatch, then an SSH tunnel; see its header.
 """
@@ -201,6 +203,57 @@ class Backgrounds:
         _append_feedback(self.feedback_path, self.lock, "recording_id", d)
 
 
+class SynthSet:
+    """A synthetic set of ``tools/synth/generate.py``: ``recordings.tsv``, ``events.tsv``, ``audio/``."""
+
+    def __init__(self, folder: Path) -> None:
+        self.folder = folder
+        self.rows = list(csv.DictReader(open(folder / "recordings.tsv"), delimiter="\t"))
+        self.by_id = {r["rec_id"]: r for r in self.rows}
+        self.events: Dict[str, List[Dict]] = {r["rec_id"]: [] for r in self.rows}
+        for e in csv.DictReader(open(folder / "events.tsv"), delimiter="\t"):
+            self.events[e["rec_id"]].append(e)
+        self.feedback_path = folder / "synth_feedback.jsonl"
+        self.lock = threading.Lock()
+
+    def audio(self, rec_id: str) -> Tuple[np.ndarray, int]:
+        if rec_id not in self.by_id:  # only the set's own files, never a path from the URL
+            raise KeyError(rec_id)
+        x, sr = sf.read(self.folder / "audio" / f"{rec_id}.flac", dtype="float32")
+        return x, sr
+
+    def feedback(self) -> Dict[str, Dict]:
+        return _read_feedback(self.feedback_path, "rec_id")
+
+    def add_feedback(self, d: Dict) -> None:
+        _append_feedback(self.feedback_path, self.lock, "rec_id", d)
+
+
+@lru_cache(maxsize=256)
+def _synth_png(rec_id: str, answers: bool) -> bytes:
+    """The minute's spectrogram, 0-24 kHz; with ``answers``, each planted call shaded and named."""
+    st = SYNTH[0]
+    x, sr = st.audio(rec_id)
+    f, t, s = signal.stft(x, sr, nperseg=1024, noverlap=544)
+    p = 20 * np.log10(np.abs(s) + 1e-12)
+    p -= np.median(p, axis=1, keepdims=True)
+    fig = plt.figure(figsize=(14, 2.6), dpi=80)
+    ax = fig.add_axes([0.03, 0.12, 0.965, 0.8])
+    ax.imshow(p, origin="lower", aspect="auto", cmap="magma", vmin=0, vmax=30, extent=[0, len(x) / sr, 0, sr / 2000])
+    if answers:
+        for k, e in enumerate(st.events[rec_id]):
+            a, b = float(e["onset_s"]), float(e["offset_s"])
+            ax.axvspan(a, b, ymin=0.95, ymax=1.0, color="#4fc1b8")
+            ax.text((a + b) / 2, 22.6 - 1.4 * (k % 2), e["call_type"], color="#e8fffd", fontsize=6.5, ha="center", va="top")
+    ax.set_yticks([0, 5, 10, 15, 20])
+    ax.set_xticks(range(0, 61, 5))
+    ax.tick_params(labelsize=7, colors="#555")
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png")
+    plt.close(fig)
+    return buf.getvalue()
+
+
 def _read_feedback(path: Path, key: str) -> Dict[str, Dict]:
     """The last verdict per item from a JSONL log; an empty verdict with no note clears it."""
     out: Dict[str, Dict] = {}
@@ -276,6 +329,7 @@ def _wav(x: np.ndarray, sr: int) -> bytes:
 LIBS: List[Library] = []
 DONORS: List[Donors] = []
 BACKGROUNDS: List[Backgrounds] = []
+SYNTH: List[SynthSet] = []
 MAP_NAME = re.compile(r"map(_c\d+)*")
 
 
@@ -371,6 +425,18 @@ def make_handler(lib_id: int, token: str):
                     if rid not in BACKGROUNDS[0].by_id:  # only the candidates' images, never a path from the URL
                         raise KeyError(rid)
                     self._send((BACKGROUNDS[0].folder / "png" / f"{rid}.png").read_bytes(), "image/png", cache=True)
+                elif path == "/synth":
+                    self._send((HERE / "synth.html").read_bytes(), "text/html; charset=utf-8")
+                elif path == "/api/synth":
+                    st = SYNTH[0]
+                    fb = st.feedback()
+                    self._send(json.dumps([{**r, "events": st.events[r["rec_id"]], "feedback": fb.get(r["rec_id"])}
+                                           for r in st.rows]).encode(), "application/json")
+                elif path.startswith("/api/synth_audio/"):
+                    x, sr = SYNTH[0].audio(path.split("/")[-1])
+                    self._send(_wav(x, sr), "audio/wav", cache=True)
+                elif path.startswith("/api/synth_spec/"):
+                    self._send(_synth_png(path.split("/")[-1], q.get("answers", "1") == "1"), "image/png", cache=True)
                 elif path == "/api/meta":
                     self._send(json.dumps(lib.meta()).encode(), "application/json")
                 elif path == "/api/calls":
@@ -394,6 +460,14 @@ def make_handler(lib_id: int, token: str):
                     int(self.headers.get("Content-Length", 0)))).items()}
                 with lib.lock:
                     _names_path(lib.run, _map_name(q)).write_text(json.dumps(names, ensure_ascii=False, indent=1))
+                self._send(b'{"ok":true}', "application/json")
+                return
+            if urlparse(self.path).path == "/api/synth_feedback" and SYNTH:
+                d = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                if d.get("rec_id") not in SYNTH[0].by_id:
+                    self._send(b"unknown recording", "text/plain", 400)
+                    return
+                SYNTH[0].add_feedback(d)
                 self._send(b'{"ok":true}', "application/json")
                 return
             if urlparse(self.path).path == "/api/bg_feedback" and BACKGROUNDS:
@@ -435,6 +509,7 @@ def main() -> None:
     ap.add_argument("--token", help="fixed access token (default: random)")
     ap.add_argument("--donors", type=Path, help="donor-call folder of tools/synth/donor_calls.py, served at /donors")
     ap.add_argument("--backgrounds", type=Path, help="folder of tools/synth/backgrounds.py, served at /backgrounds")
+    ap.add_argument("--synth", type=Path, help="a set of tools/synth/generate.py, served at /synth")
     a = ap.parse_args()
     LIBS.append(Library(Path(a.run), a.all))
     if a.donors:
@@ -443,6 +518,9 @@ def main() -> None:
     if a.backgrounds:
         BACKGROUNDS.append(Backgrounds(a.backgrounds))
         print(f"{len(BACKGROUNDS[0].rows)} background candidates at /backgrounds", flush=True)
+    if a.synth:
+        SYNTH.append(SynthSet(a.synth))
+        print(f"{len(SYNTH[0].rows)} synthetic recordings at /synth", flush=True)
     token = a.token or secrets.token_urlsafe(12)
     lib = LIBS[0]
     print(f"{len(lib.calls)} calls from {len(set(c['recording_id'] for c in lib.calls))} recordings", flush=True)

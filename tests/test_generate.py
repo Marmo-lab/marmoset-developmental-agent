@@ -99,3 +99,14 @@ def test_approved_reads_the_last_verdict(tmp_path: Path) -> None:
         {"recording_id": "a", "verdict": "approve"}, {"recording_id": "b", "verdict": "approve"},
         {"recording_id": "b", "verdict": "reject"})))
     assert [c["recording_id"] for c in g.approved(tmp_path)] == ["a"]
+
+
+def test_library_serves_a_set(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from tools.corpus.call_library import SynthSet
+    test_make_writes_audio_and_the_answer(tmp_path, monkeypatch)
+    st = SynthSet(tmp_path / "out")
+    assert sum(len(v) for v in st.events.values()) == sum(int(r["n_calls"]) for r in st.rows)
+    x, sr = st.audio("snr1.5_0000")
+    assert sr == SR and len(x) == g.LENGTH_S * SR
+    with pytest.raises(KeyError):
+        st.audio("../events")

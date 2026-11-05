@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>הקלטות סינתטיות</title>
+<style>
+/* Layout: one card per synthetic minute: spectrogram (planted calls marked on top, or hidden), player, verdict. */
+:root{
+  --bg:#f3f5f4; --card:#ffffff; --ink:#1d282c; --muted:#5d6b70; --rule:#d9e0de; --accent:#0b7a75; --accent-soft:#e1f0ee;
+  --ok:#2e7d32; --bad:#c62828;
+  --font:"Assistant","Arial Hebrew",Arial,sans-serif; --mono:ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#121819;--card:#1a2224;--ink:#e2eae8;--muted:#9aaeb0;--rule:#2b3739;--accent:#4fc1b8;--accent-soft:#163030;
+        --ok:#7cc47f;--bad:#ef7b7b;color-scheme:dark}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.5}
+header{background:var(--card);border-bottom:1px solid var(--rule);padding:10px max(16px,2vw);display:flex;flex-direction:column;gap:6px}
+h1{margin:0;font-size:1.25rem}
+.sum{color:var(--muted);font-size:.9rem;max-width:72rem}
+label.toggle{font-size:.9rem;display:flex;gap:6px;align-items:center}
+main{padding:14px max(16px,2vw);display:flex;flex-direction:column;gap:14px;max-width:1400px;margin:0 auto}
+.rec{background:var(--card);border:1px solid var(--rule);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.meta{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:.88rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.meta b{color:var(--ink);font-weight:600}
+.badge{font-size:.78rem;padding:1px 8px;border-radius:9px;background:var(--accent-soft);color:var(--ink)}
+.rec img{width:100%;display:block;border-radius:4px;background:var(--bg)}
+audio{width:100%;height:32px}
+.verdicts{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+button{font:inherit;cursor:pointer;border:1px solid var(--rule);background:var(--bg);color:var(--ink);border-radius:5px;padding:3px 10px;font-size:.85rem}
+.verdicts button.on[data-v=good]{background:var(--ok);color:#fff;border-color:var(--ok)}
+.verdicts button.on[data-v=bad]{background:var(--bad);color:#fff;border-color:var(--bad)}
+.verdicts button.on[data-v=unsure]{background:var(--muted);color:#fff;border-color:var(--muted)}
+.verdicts input{flex:1;min-width:12rem;font:inherit;font-size:.85rem;padding:3px 6px;border:1px solid var(--rule);border-radius:5px;background:var(--bg);color:var(--ink)}
+.saved{font-size:.75rem;color:var(--ok)}
+.empty{color:var(--muted);padding:30px;text-align:center}
+code{font-family:var(--mono);font-size:.8em;direction:ltr;unicode-bidi:isolate}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+</head>
+<body>
+<header>
+  <h1>הקלטות סינתטיות לדוגמה</h1>
+  <div class="sum" id="sum">טוען…</div>
+  <div class="sum">כל הקלטה היא דקה של רקע לילה מאושר, עם קריאות ששתלנו בעוצמה אחת (SNR) לכל ההקלטה. הפס הטורקיז בראש הספקטרוגרמה מסמן כל קריאה שנשתלה, עם הסוג שלה: זו "התשובה" שמולה נבדוק את הגלאי.</div>
+  <label class="toggle"><input type="checkbox" id="hide"> הסתר את התשובות (להאזנה עיוורת: אפשר לנסות למצוא את הקריאות בעצמך)</label>
+</header>
+<main id="list"><div class="empty">טוען…</div></main>
+<script>
+const T = new URLSearchParams(location.search).get("t") || "";
+const api = (p, q = {}) => `${p}?${new URLSearchParams({...q, t: T})}`;
+const $ = id => document.getElementById(id);
+const VERDICTS = [["good","✓ נשמע כמו הקלטה אמיתית"],["bad","✗ משהו לא טבעי"],["unsure","? לא בטוח"]];
+let rows = [];
+
+function card(r){
+  const el = document.createElement("article"); el.className = "rec";
+  const types = {};
+  for (const e of r.events) types[e.call_type] = (types[e.call_type] || 0) + 1;
+  el.innerHTML = `
+    <div class="meta"><span class="badge">SNR <b dir="ltr">${(+r.snr).toFixed(1)}×</b> · <span dir="ltr">${(+r.snr_db) > 0 ? "+" : ""}${(+r.snr_db).toFixed(1)} dB</span></span>
+      <span><b>${r.n_calls}</b> קריאות</span><span class="ans">${Object.entries(types).map(([t, n]) => `<span dir="ltr">${t}×${n}</span>`).join(" · ")}</span>
+      <span>רקע <code>${r.background}</code> מדקה ${(r.background_start_s / 60).toFixed(1)}</span><code>${r.rec_id}</code></div>
+    <img loading="lazy" alt="ספקטרוגרמה של ${r.rec_id}">
+    <audio controls preload="none" src="${api(`api/synth_audio/${r.rec_id}`)}"></audio>
+    <div class="verdicts">${VERDICTS.map(([v, l]) => `<button type="button" data-v="${v}">${l}</button>`).join("")}
+      <input placeholder="הערה (לא חובה)"><span class="saved"></span></div>`;
+  const btns = el.querySelectorAll(".verdicts button"), note = el.querySelector(".verdicts input"), saved = el.querySelector(".saved");
+  note.value = r.feedback && r.feedback.note || "";
+  let cur = r.feedback ? r.feedback.verdict : null;
+  const paint = () => btns.forEach(b => b.classList.toggle("on", b.dataset.v === cur));
+  const save = async () => {
+    const res = await fetch(api("api/synth_feedback"), {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({rec_id: r.rec_id, verdict: cur, note: note.value})});
+    saved.textContent = res.ok ? "נשמר" : "השמירה נכשלה: בדוק שהשרת עדיין רץ";
+    setTimeout(() => saved.textContent = "", 1500);
+  };
+  btns.forEach(b => b.onclick = () => { cur = cur === b.dataset.v ? null : b.dataset.v; paint(); save(); });
+  note.onchange = save;
+  paint();
+  return el;
+}
+function render(){
+  const hide = $("hide").checked;
+  $("list").innerHTML = "";
+  for (const r of rows){
+    const el = card(r);
+    el.querySelector("img").src = api(`api/synth_spec/${r.rec_id}`, {answers: hide ? 0 : 1});
+    el.querySelector(".ans").style.visibility = hide ? "hidden" : "visible";
+    $("list").appendChild(el);
+  }
+}
+$("hide").onchange = render;
+fetch(api("api/synth")).then(r => r.json()).then(d => {
+  rows = d;
+  const levels = [...new Set(rows.map(r => (+r.snr).toFixed(1)))];
+  $("sum").textContent = `${rows.length} הקלטות של דקה · רמות SNR (יחס אמפליטודה): ${levels.join(", ")} · ${rows.reduce((n, r) => n + +r.n_calls, 0)} קריאות שתולות`;
+  render();
+}).catch(() => { $("list").innerHTML = `<div class="empty">אין גישה לרשימה. פתח את הכתובת שהשרת הדפיס, עם <code>?t=…</code>, ובדוק שהשרת הופעל עם <code>--synth</code>.</div>`; });
+</script>
+</body>
+</html>
