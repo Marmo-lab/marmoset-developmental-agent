@@ -137,7 +137,7 @@ def selftest(folder: Path, out: Path, levels: Sequence[str] = ("10.0", "2.0")) -
     fa: Dict[str, int] = defaultdict(int)
     for r in recs:
         x, sr = sf.read(folder / "audio" / f"{r['rec_id']}.flac", dtype="float32")
-        cands = find(lambda s, n: x[s:s + n], len(x))
+        cands = find(lambda s, n, x=x: x[s:s + n], len(x))
         ev = events[r["rec_id"]]
         for e in ev:
             a, b = float(e["onset_s"]), float(e["offset_s"])
