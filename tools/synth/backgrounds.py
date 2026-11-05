@@ -130,14 +130,15 @@ def select(out: Path, n: int) -> Dict:
 
 
 def _ltsa_png(ltsa: np.ndarray, path: Path) -> None:
-    """The hour's long-term spectrum, 0-24 kHz by time in minutes."""
+    """The hour's long-term spectrum, 0-24 kHz by time in minutes, each band in dB above its own
+    median over the hour (0-20 dB): steady noise goes dark and anything transient stands out,
+    whatever its band (on absolute dB the loud low bands set the scale and hide the call band)."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     fig = plt.figure(figsize=(12, 2.4), dpi=80)
     ax = fig.add_axes([0.035, 0.14, 0.96, 0.82])
-    hi = np.percentile(ltsa, 99.5)
-    ax.imshow(ltsa, origin="lower", aspect="auto", cmap="magma", vmin=hi - 50, vmax=hi,
+    ax.imshow(ltsa - np.median(ltsa, axis=1, keepdims=True), origin="lower", aspect="auto", cmap="magma", vmin=0, vmax=20,
               extent=[0, ltsa.shape[1] / 60, 0, ltsa.shape[0] * LTSA_BAND_HZ / 1000])
     ax.set_yticks([0, 5, 10, 15, 20])
     ax.tick_params(labelsize=7, colors="#555")

@@ -45,7 +45,7 @@ code{font-family:var(--mono);font-size:.8em;direction:ltr;unicode-bidi:isolate}
 <header>
   <h1>רקעי לילה מועמדים</h1>
   <div class="sum" id="sum">טוען…</div>
-  <div class="sum">לכל שעה: הספקטרוגרמה של השעה כולה (0–24 kHz, זמן בדקות). <b>לחיצה על הספקטרוגרמה מנגנת 15 שניות מאותה נקודה.</b> הכפתורים מנגנים קטעים קבועים. מה שנשמע הוא הממוצע של ארבעת המיקרופונים, בדיוק מה שהגלאי שומע.</div>
+  <div class="sum">לכל שעה: הספקטרוגרמה של השעה כולה (0–24 kHz, זמן בדקות), כל תדר ביחס לרמה הרגילה שלו באותה שעה: רעש קבוע נעלם לשחור, וכל אירוע חולף (קריאה, רעש) בולט כנקודה בהירה. <b>לחיצה על הספקטרוגרמה מנגנת 15 שניות מאותה נקודה.</b> הכפתורים מנגנים קטעים קבועים. מה שנשמע הוא הממוצע של ארבעת המיקרופונים, בדיוק מה שהגלאי שומע.</div>
 </header>
 <main id="list"><div class="empty">טוען…</div></main>
 <script>
@@ -60,7 +60,7 @@ function card(r){
   const t = r.start_time.replace("T", " ").slice(0, 16);
   el.innerHTML = `
     <div class="meta"><b dir="ltr">${t}</b><span>אורך <b>${(r.duration_s / 60).toFixed(0)}</b> דק׳</span>
-      <span>רמת רקע חציונית <b>${r.level_med_db}</b> dB <span dir="ltr">(${r.level_p5_db} … ${r.level_p95_db})</span></span>
+      <span>רמת רקע חציונית <b dir="ltr">${r.level_med_db} dB</b> <span dir="ltr">(${r.level_p5_db} … ${r.level_p95_db})</span></span>
       <span>זיהויים בסף נמוך <b>${r.n_low}</b></span><code>${r.recording_id}</code></div>
     <div class="spec"><img loading="lazy" alt="ספקטרוגרמה של שעת ההקלטה" src="${api(`api/bg_png/${r.recording_id}`)}"><div class="mark"></div></div>
     <div class="row"><span>קטעים:</span>${PRESETS.map(m => `<button type="button" data-m="${m}">דקה ${m}</button>`).join("")}
@@ -99,8 +99,8 @@ function card(r){
   return el;
 }
 fetch(api("api/backgrounds")).then(r => r.json()).then(d => {
-  $("sum").textContent = `${d.rows.length} שעות לילה שבהן הגלאי לא מצא אף קריאה גם בסף ${d.low_threshold}, ` +
-    `והרמה שלהן בפס הקריאות קרובה לרמת הרקע של היום (${d.day_ref_db} dB, מ־${d.n_day} הקלטות יום).`;
+  $("sum").innerHTML = `${d.rows.length} שעות לילה שבהן הגלאי לא מצא אף קריאה גם בסף ${d.low_threshold}, ` +
+    `והרמה שלהן בפס הקריאות קרובה לרמת הרקע של היום (<span dir="ltr">${d.day_ref_db} dB</span>, מ־${d.n_day} הקלטות יום).`;
   $("list").innerHTML = "";
   for (const r of d.rows) $("list").appendChild(card(r));
 }).catch(() => { $("list").innerHTML = `<div class="empty">אין גישה לרשימה. פתח את הכתובת שהשרת הדפיס, עם <code>?t=…</code>, ובדוק שהשרת הופעל עם <code>--backgrounds</code>.</div>`; });
