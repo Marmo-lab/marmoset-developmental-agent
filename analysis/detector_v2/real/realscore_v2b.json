@@ -1,0 +1,11 @@
+{
+ "model": "v2b",
+ "day_hours": 30.3,
+ "night_hours": 10.1,
+ "candidates": 16334,
+ "candidates_caught": 0.907,
+ "missed_by_v4": 4176,
+ "missed_by_v4_caught": 0.663,
+ "detections_per_day_hour": 1511.3,
+ "detections_per_night_hour": 0.3
+}

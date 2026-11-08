@@ -117,3 +117,43 @@ Open: how many of those merges join two labelled calls through a short high call
 that the hand labels never marked (then v2 is right to see sound there, wrong only to join), and
 whether the real minutes' ignored gaps teach the model to bridge. v2 is not production;
 `learned_model_path` still points at v1.
+
+### Fixing the merges: v2a, v2b (2026-11-08)
+v2 merged neighbouring calls. The user: merging close calls is acceptable, not critical. Two
+variants were trained anyway, identical to v2 except: **v2a**, gaps of 0.05-1 s between real
+positives taught as background (`--real-gaps`); **v2b**, the same plus onset / offset heads
+(`HEADS=3`). Hand labels, day clips, `c`+`?`, cross-validated:
+
+| model | P | R | F1 | IoU P / R | split | merged | missed | onset / offset error |
+|---|---|---|---|---|---|---|---|---|
+| v1 (production) | 0.94 | 0.90 | 0.92 | 0.81 / 0.81 | 0.05 | 0.05 | 0.10 | 18 / 44 ms |
+| v2 | 0.91 | 0.93 | 0.92 | 0.81 / 0.77 | 0.02 | 0.13 | 0.07 | 22 / 54 ms |
+| v2a | 0.91 | 0.97 | 0.93 | 0.84 / 0.90 | 0.03 | 0.04 | 0.03 | 28 / 42 ms |
+| v2b | 0.91 | 0.96 | 0.93 | 0.81 / 0.89 | 0.05 | 0.04 | 0.04 | 25 / 44 ms |
+
+Held-out synthetic (front end, main matching), +20 / +6 / -3 dB:
+
+| model | recall | precision | false alarms / h |
+|---|---|---|---|
+| v1 | 0.56 / 0.44 / 0.21 | 0.90 / 0.97 / 0.85 | 0.2 / 0 / 0 |
+| v2 | 0.83 / 0.73 / 0.63 | 0.82 / 0.79 / 0.81 | 2.8 / 5.6 / 7.2 |
+| v2a | 0.86 / 0.77 / 0.65 | 0.88 / 0.81 / 0.83 | 1.0 / 4.6 / 4.4 |
+| v2b | 0.88 / 0.79 / 0.67 | 0.92 / 0.83 / 0.82 | 0.8 / 5.6 / 7.0 |
+
+Recall at +6 dB, v1 / v2 / v2a / v2b: tsik 0.02 / 0.56 / 0.65 / 0.67; tsik-ek 0.01 / 0.36 /
+0.43 / 0.31; seep 0.05 / 0.48 / 0.64 / 0.72; alarm 0.02 / 0.47 / 0.44 / 0.58; chirp 0.00 / 0.68 /
+0.71 / 0.74; loud shrill 0.90 / 0.71 / 0.79 / 0.85; phees 1.00 throughout.
+
+Real test half (30 day hours, 10 call-free night hours):
+
+| model | candidates caught (all / missed by v4) | detections per day hour | per night hour |
+|---|---|---|---|
+| v1 | 0.74 / 0.00 | 1,354 | 0 |
+| v2 | 0.95 / 0.81 | 1,363 | 0.1 |
+| v2a | 0.90 / 0.61 | 1,480 | 0 |
+| v2b | 0.91 / 0.66 | 1,511 | 0.3 |
+
+Reading: the gap fix removes v2's merges (13% to 4%) and lifts every hand-label score above
+production (IoU recall 0.81 to 0.90). v2's higher share of caught real candidates is partly its
+merging: a long bridged detection covers candidates between calls. v2a and v2b now report the
+newly caught calls as separate detections (+9-12% detections per hour).
