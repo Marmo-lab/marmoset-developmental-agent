@@ -124,3 +124,33 @@ def test_realeval_runs_a_model_on_the_test_half_and_nights(tmp_path: Path) -> No
     r = fsh.realscore(run, out, "v1")
     assert r["candidates"] == 2 and r["missed_by_v4"] == 2 and r["candidates_caught"] == 0.0
     assert abs(r["day_hours"] - 0.1) < 0.01 and r["detections_per_night_hour"] == 0.0
+
+
+def test_library_serves_a_generic_review(tmp_path: Path) -> None:
+    import json
+
+    import pytest
+    import soundfile as sf
+
+    import tools.corpus.call_library as cl
+    (tmp_path / "clips").mkdir()
+    sf.write(tmp_path / "clips" / "i0.flac", np.zeros(SR, np.float32), SR)
+    (tmp_path / "review.json").write_text(json.dumps({"title": "t", "intro": "i", "options": [["a", "A"]]}))
+    (tmp_path / "items.tsv").write_text('item_id\tmarks\ni0\t[[0.1, 0.5, "label", "x"], [0.2, 0.9, "b", "v2"]]\n')
+    rv = cl.Review(tmp_path)
+    cl.REVIEW[:] = [rv]
+    assert rv.audio("i0")[0].shape == (SR,) and cl._review_png("i0")[:4] == b"\x89PNG"
+    with pytest.raises(KeyError):
+        rv.audio("../items")
+    rv.add_feedback({"item_id": "i0", "verdict": "a"})
+    assert rv.feedback()["i0"]["verdict"] == "a"
+
+
+def test_merge_cases_are_new_joins_on_day_clips() -> None:
+    from tools.analysis.merge_review import cases
+    labels = {"c": [(1.0, 1.5), (1.8, 2.2), (5.0, 5.5), (5.7, 6.0)], "n": [(1.0, 1.5), (1.8, 2.2)]}
+    a = {"c": [(0.9, 1.6), (1.7, 2.3), (4.9, 6.1)]}                 # A already joins the second pair
+    b = {"c": [(0.9, 2.3), (4.9, 6.1)], "n": [(0.9, 2.3)]}
+    found = cases(a, b, labels, {"c": 1, "n": 0})
+    assert [(f["clip_id"], f["det"]) for f in found] == [("c", (0.9, 2.3))]
+    assert found[0]["gaps"] == [(1.5, 1.8)]

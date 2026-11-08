@@ -22,6 +22,12 @@ with verdicts in ``DIR/bg_feedback.jsonl``.
 clip around each, its spectrogram, played at normal and half speed), with verdicts in
 ``DIR/short_high_feedback.jsonl``.
 
+``--review DIR`` adds ``/review``: a generic listening review (e.g. ``tools/analysis/merge_review.py``):
+``review.json`` (title, intro, answer options), ``items.tsv`` (``item_id``, any info columns,
+``marks`` as JSON ``[[start_s, end_s, kind, label], ...]`` in clip seconds) and
+``clips/<item_id>.flac``; verdicts in ``DIR/review_feedback.jsonl``. The server also runs
+locally on an empty run folder, for a review of local files.
+
 Verdicts are appended to ``RUN/library_feedback.jsonl`` (one JSON object per click; the
 last one per call wins), so Claude can read them from the run directory.
 
@@ -29,7 +35,7 @@ Every request must carry the token printed at start-up (``?t=...``): on the clus
 server listens on a compute node that other users can reach.
 
 Usage:
-    python tools/corpus/call_library.py RUN [--port 8765] [--host 127.0.0.1] [--all] [--donors DIR] [--backgrounds DIR] [--synth DIR] [--short-high DIR]
+    python tools/corpus/call_library.py RUN [--port 8765] [--host 127.0.0.1] [--all] [--donors DIR] [--backgrounds DIR] [--synth DIR] [--short-high DIR] [--review DIR]
     (--all: every recording, not only the cleaned ones)
 On the cluster: tools/cluster/call_library.sbatch, then an SSH tunnel; see its header.
 """
@@ -258,6 +264,57 @@ class ShortHigh:
         _append_feedback(self.feedback_path, self.lock, "cand_id", d)
 
 
+class Review:
+    """A generic review folder: ``review.json``, ``items.tsv``, ``clips/<item_id>.flac``."""
+
+    def __init__(self, folder: Path) -> None:
+        self.folder = folder
+        self.info = json.loads((folder / "review.json").read_text())
+        self.rows = list(csv.DictReader(open(folder / "items.tsv"), delimiter="\t"))
+        self.by_id = {r["item_id"]: r for r in self.rows}
+        self.feedback_path = folder / "review_feedback.jsonl"
+        self.lock = threading.Lock()
+
+    def audio(self, item_id: str) -> Tuple[np.ndarray, int]:
+        if item_id not in self.by_id:  # only the review's clips, never a path from the URL
+            raise KeyError(item_id)
+        x, sr = sf.read(self.folder / "clips" / f"{item_id}.flac", dtype="float32")
+        return x, sr
+
+    def feedback(self) -> Dict[str, Dict]:
+        return _read_feedback(self.feedback_path, "item_id")
+
+    def add_feedback(self, d: Dict) -> None:
+        _append_feedback(self.feedback_path, self.lock, "item_id", d)
+
+
+REVIEW_COLORS = {"label": "#4fc1b8", "a": "#b9b8b2", "b": "#3987e5"}
+
+
+@lru_cache(maxsize=512)
+def _review_png(item_id: str) -> bytes:
+    """The clip, 0-24 kHz, each band in dB above its median; one strip of marks per kind, on top."""
+    rv = REVIEW[0]
+    x, sr = rv.audio(item_id)
+    marks = json.loads(rv.by_id[item_id]["marks"])
+    f, t, s = signal.stft(x, sr, nperseg=512, noverlap=432)
+    p = 20 * np.log10(np.abs(s) + 1e-12)
+    p -= np.median(p, axis=1, keepdims=True)
+    fig = plt.figure(figsize=(7.5, 2.6), dpi=80)
+    ax = fig.add_axes([0.05, 0.1, 0.94, 0.88])
+    ax.imshow(p, origin="lower", aspect="auto", cmap="magma", vmin=0, vmax=30, extent=[0, len(x) / sr, 0, sr / 2000])
+    kinds = list(dict.fromkeys(m[2] for m in marks))
+    for a, b, kind, _ in marks:
+        k = kinds.index(kind)
+        ax.axvspan(a, b, ymin=0.97 - 0.045 * k, ymax=1.0 - 0.045 * k, color=REVIEW_COLORS.get(kind, "#e0a24a"))
+    ax.set_yticks([0, 5, 10, 15, 20])
+    ax.tick_params(labelsize=6, colors="#555")
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png")
+    plt.close(fig)
+    return buf.getvalue()
+
+
 @lru_cache(maxsize=512)
 def _short_high_png(cand_id: str) -> bytes:
     """The 2 s clip, 0-24 kHz, each band in dB above its median; the candidate marked on top."""
@@ -382,6 +439,7 @@ DONORS: List[Donors] = []
 BACKGROUNDS: List[Backgrounds] = []
 SYNTH: List[SynthSet] = []
 SHORT_HIGH: List[ShortHigh] = []
+REVIEW: List[Review] = []
 MAP_NAME = re.compile(r"map(_c\d+)*")
 
 
@@ -489,6 +547,19 @@ def make_handler(lib_id: int, token: str):
                     self._send(_wav(x, sr), "audio/wav", cache=True)
                 elif path.startswith("/api/synth_spec/"):
                     self._send(_synth_png(path.split("/")[-1], q.get("answers", "1") == "1"), "image/png", cache=True)
+                elif path == "/review":
+                    self._send((HERE / "review.html").read_bytes(), "text/html; charset=utf-8")
+                elif path == "/api/review":
+                    rv = REVIEW[0]
+                    fb = rv.feedback()
+                    self._send(json.dumps({**rv.info, "colors": REVIEW_COLORS,
+                                           "rows": [{**r, "feedback": fb.get(r["item_id"])} for r in rv.rows]},
+                                          ensure_ascii=False).encode(), "application/json")
+                elif path.startswith("/api/review_audio/"):
+                    x, sr = REVIEW[0].audio(path.split("/")[-1])
+                    self._send(_wav(x, sr), "audio/wav", cache=True)
+                elif path.startswith("/api/review_spec/"):
+                    self._send(_review_png(path.split("/")[-1]), "image/png", cache=True)
                 elif path == "/short_high":
                     self._send((HERE / "short_high.html").read_bytes(), "text/html; charset=utf-8")
                 elif path == "/api/short_high":
@@ -524,6 +595,14 @@ def make_handler(lib_id: int, token: str):
                     int(self.headers.get("Content-Length", 0)))).items()}
                 with lib.lock:
                     _names_path(lib.run, _map_name(q)).write_text(json.dumps(names, ensure_ascii=False, indent=1))
+                self._send(b'{"ok":true}', "application/json")
+                return
+            if urlparse(self.path).path == "/api/review_feedback" and REVIEW:
+                d = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                if d.get("item_id") not in REVIEW[0].by_id:
+                    self._send(b"unknown item", "text/plain", 400)
+                    return
+                REVIEW[0].add_feedback(d)
                 self._send(b'{"ok":true}', "application/json")
                 return
             if urlparse(self.path).path == "/api/short_high_feedback" and SHORT_HIGH:
@@ -583,6 +662,7 @@ def main() -> None:
     ap.add_argument("--backgrounds", type=Path, help="folder of tools/synth/backgrounds.py, served at /backgrounds")
     ap.add_argument("--synth", type=Path, help="a set of tools/synth/generate.py, served at /synth")
     ap.add_argument("--short-high", type=Path, help="folder of tools/analysis/find_short_high.py, served at /short_high")
+    ap.add_argument("--review", type=Path, help="a review folder (review.json, items.tsv, clips/), served at /review")
     a = ap.parse_args()
     LIBS.append(Library(Path(a.run), a.all))
     if a.donors:
@@ -597,6 +677,9 @@ def main() -> None:
     if a.short_high:
         SHORT_HIGH.append(ShortHigh(a.short_high))
         print(f"{len(SHORT_HIGH[0].rows)} short high candidates at /short_high", flush=True)
+    if a.review:
+        REVIEW.append(Review(a.review))
+        print(f"{len(REVIEW[0].rows)} items to review at /review", flush=True)
     token = a.token or secrets.token_urlsafe(12)
     lib = LIBS[0]
     print(f"{len(lib.calls)} calls from {len(set(c['recording_id'] for c in lib.calls))} recordings", flush=True)
