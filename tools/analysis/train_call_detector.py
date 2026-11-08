@@ -27,6 +27,11 @@ short high call (tsik, tsik-ek, seep), and the detector misses them (docs/SYNTH_
   the user heard as calls, and the run's calls) are 1; the rest is ignored (it may hold calls
   nobody found), and so are its edges (the rule's bounds are approximate). Crops from these
   minutes are centred on a random positive frame, so each carries supervision.
+  ``--real-gaps``: a gap of ``REAL_GAP_S`` between two positives is taught as 0, not ignored
+  (one frame kept ignored at each side). Ignored gaps let v2 learn to bridge neighbours:
+  merges on the hand labels rose from 5% to 13% (docs/SYNTH_EVAL.md, v2). The lower bound is
+  the hand labels' own convention (labels closer than 0.1 s were merged at import, so a wider
+  gap is a real separation; 0.05 s leaves a margin for the rule's approximate bounds).
 Each batch draws ``--mix`` (synthetic, real) of its crops from these sources and the rest from
 the hand clips, so the 45 labelled minutes keep half the weight. ``cv`` folds the hand clips
 only; the extra sources are in every fold's training set.
@@ -77,6 +82,7 @@ SETS = (("labeling/clips.csv", "data/labels/handlabels.csv", "labeling/clip_audi
 CLIP_S = 60.0
 CROP = 400  # frames, 4 s at 10 ms
 EDGE_SIGMA_FRAMES = 2.0  # onset / offset targets: Gaussian bumps of sd 20 ms on the labelled edges
+REAL_GAP_S = (0.05, 1.0)  # [ours] gaps between real positives taught as background with --real-gaps
 EDGE_POS_WEIGHT = 9.0  # edge frames are rare; weight loss terms by 1 + 9 * target
 
 Clip = Dict[str, np.ndarray]
@@ -159,8 +165,19 @@ def load_synth(cfg: PreprocessingConfig, folder: Path) -> Dict[str, Clip]:
     return out
 
 
-def load_real(cfg: PreprocessingConfig, folder: Path) -> Dict[str, Clip]:
-    """Real minutes as clips: positives 1, everything else (and every edge) ignored."""
+def _union(spans: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
+    out: List[List[float]] = []
+    for a, b in sorted(spans):
+        if out and a <= out[-1][1]:
+            out[-1][1] = max(out[-1][1], b)
+        else:
+            out.append([a, b])
+    return [(a, b) for a, b in out]
+
+
+def load_real(cfg: PreprocessingConfig, folder: Path, gaps: bool = False) -> Dict[str, Clip]:
+    """Real minutes as clips: positives 1, everything else (and every edge) ignored; with
+    ``gaps``, short gaps between positives 0 (see ``--real-gaps``)."""
     import soundfile as sf
     spans: Dict[str, List[Tuple[float, float]]] = {}
     for r in csv.DictReader(open(folder / "positives.tsv"), delimiter="\t"):
@@ -170,7 +187,13 @@ def load_real(cfg: PreprocessingConfig, folder: Path) -> Dict[str, Clip]:
         x, sr = sf.read(folder / f"{mid}.flac", dtype="float32")
         feats, t = _features(x, sr, cfg)
         y = np.full(len(t), -1, np.float32)
-        for a, b in ss:
+        u = _union(ss)
+        hop = t[1] - t[0]
+        if gaps:
+            for (_, b), (a, _) in zip(u, u[1:]):
+                if REAL_GAP_S[0] <= a - b <= REAL_GAP_S[1]:
+                    y[(t > b + hop) & (t < a - hop)] = 0
+        for a, b in u:
             y[(t >= a) & (t <= b)] = 1
         if not (y == 1).any():
             continue
@@ -240,24 +263,25 @@ def to_calls(prob: np.ndarray, clip: Clip, cfg: PreprocessingConfig) -> List[Tup
             for c in activity_to_calls(act, cfg) if c.end_s - lead > 0 and c.start_s - lead < CLIP_S]
 
 
-def load_extra(cfg: PreprocessingConfig, synth: List[Path], real: List[Path],
-               mix: Tuple[float, float]) -> Tuple[Dict[str, Clip], Tuple[Tuple[List[str], float], ...]]:
+def load_extra(cfg: PreprocessingConfig, synth: List[Path], real: List[Path], mix: Tuple[float, float],
+               real_gaps: bool = False) -> Tuple[Dict[str, Clip], Tuple[Tuple[List[str], float], ...]]:
     clips: Dict[str, Clip] = {}
     groups = []
-    for dirs, loader, share in ((synth, load_synth, mix[0]), (real, load_real, mix[1])):
+    for dirs, loader, share in ((synth, load_synth, mix[0]), (real, lambda c, d: load_real(c, d, real_gaps), mix[1])):
         got: Dict[str, Clip] = {}
         for d in dirs:
             got.update(loader(cfg, d))
         clips.update(got)
         groups.append((sorted(got), share))
         if dirs:
-            print(f"{loader.__name__}: {len(got)} clips, {share:.0%} of each batch", flush=True)
+            print(f"{'synthetic' if loader is load_synth else 'real'}: {len(got)} clips, {share:.0%} of each batch", flush=True)
     return clips, tuple(groups)
 
 
 def cv(cfg: PreprocessingConfig, out: Path, folds: int, steps: int, n_out: int = 3,
        synth: List[Path] = (), real: List[Path] = (), mix: Tuple[float, float] = (0.25, 0.25),
-       sets: Tuple[Tuple[str, str, str], ...] = SETS, only: Optional[int] = None, merge: bool = False) -> None:
+       sets: Tuple[Tuple[str, str, str], ...] = SETS, only: Optional[int] = None, merge: bool = False,
+       real_gaps: bool = False) -> None:
     """All folds, or (``only``) one fold to ``fold_K.npz``, or (``merge``) join the fold files."""
     clips = load_clips(cfg, sets)
     ids = sorted(clips, key=lambda c: (int(clips[c]["day"]), c))
@@ -268,7 +292,7 @@ def cv(cfg: PreprocessingConfig, out: Path, folds: int, steps: int, n_out: int =
         for k in range(folds):
             probs.update(dict(np.load(out / f"fold_{k}.npz")))
     else:
-        more, extra = load_extra(cfg, list(synth), list(real), mix)
+        more, extra = load_extra(cfg, list(synth), list(real), mix, real_gaps)
         clips.update(more)
         t0 = time.time()
         for k, test in enumerate(groups):
@@ -292,10 +316,10 @@ def cv(cfg: PreprocessingConfig, out: Path, folds: int, steps: int, n_out: int =
 
 def fit(cfg: PreprocessingConfig, out: Path, steps: int, n_out: int = 3,
         synth: List[Path] = (), real: List[Path] = (), mix: Tuple[float, float] = (0.25, 0.25),
-        sets: Tuple[Tuple[str, str, str], ...] = SETS) -> None:
+        sets: Tuple[Tuple[str, str, str], ...] = SETS, real_gaps: bool = False) -> None:
     clips = load_clips(cfg, sets)
     ids = sorted(clips)
-    more, extra = load_extra(cfg, list(synth), list(real), mix)
+    more, extra = load_extra(cfg, list(synth), list(real), mix, real_gaps)
     clips.update(more)
     net = train(clips, ids, steps, seed=0, n_out=n_out, extra=extra)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -383,6 +407,7 @@ def main() -> None:
         p_.add_argument("--real", type=Path, action="append", default=[], help="find_short_high.py minutes folder")
         p_.add_argument("--mix", default="0.25,0.25", help="share of each batch from synthetic, real")
         p_.add_argument("--work", type=Path, help="read the hand clips from the cluster's WORK_DIR layout")
+        p_.add_argument("--real-gaps", action="store_true", help="teach short gaps between real positives as background")
     c.add_argument("--fold", type=int, help="train and score only this fold (writes fold_K.npz)")
     c.add_argument("--merge", action="store_true", help="join fold_K.npz files into the cv outputs")
     e = sub.add_parser("evaluate")
@@ -397,9 +422,9 @@ def main() -> None:
     mix = tuple(float(v) for v in a.mix.split(","))
     sets = hand_sets(a.work)
     if a.cmd == "cv":
-        cv(cfg, Path(a.out), a.folds, a.steps, a.heads, a.synth, a.real, mix, sets, a.fold, a.merge)
+        cv(cfg, Path(a.out), a.folds, a.steps, a.heads, a.synth, a.real, mix, sets, a.fold, a.merge, a.real_gaps)
     else:
-        fit(cfg, Path(a.out), a.steps, a.heads, a.synth, a.real, mix, sets)
+        fit(cfg, Path(a.out), a.steps, a.heads, a.synth, a.real, mix, sets, a.real_gaps)
 
 
 if __name__ == "__main__":

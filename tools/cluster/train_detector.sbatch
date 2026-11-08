@@ -4,6 +4,7 @@
 #   NAME=v2 sbatch -o ~/marmoset_work/logs/%x-%j.out tools/cluster/train_detector.sbatch fit [--synth DIR --real DIR]
 #   J=$(NAME=v2 sbatch --parsable --array=0-8 -o ~/marmoset_work/logs/%x-%A_%a.out tools/cluster/train_detector.sbatch cv [extra args])
 #   NAME=v2 sbatch --dependency=afterok:$J -o ~/marmoset_work/logs/%x-%j.out tools/cluster/train_detector.sbatch merge
+#   HEADS=3 adds the onset / offset heads (default 1, as production).
 #SBATCH --job-name=train-detector
 #SBATCH --partition=elscn.q
 #SBATCH --cpus-per-task=4
@@ -18,8 +19,9 @@ OUT="$WORK_DIR/detector/${NAME:?set NAME=<model name>}"
 mkdir -p "$OUT"
 cd "$PROJECT_DIR"
 T="python tools/analysis/train_call_detector.py"
+H="${HEADS:-1}"
 case "$STEP" in
-    fit)   PYTHONPATH="$PROJECT_DIR" $T fit --heads 1 --work "$WORK_DIR" --out "$OUT/call_detector_$NAME.pt" "$@" ;;
-    cv)    PYTHONPATH="$PROJECT_DIR" $T cv --heads 1 --work "$WORK_DIR" --out "$OUT/cv" --fold "${SLURM_ARRAY_TASK_ID:?array task}" "$@" ;;
-    merge) PYTHONPATH="$PROJECT_DIR" $T cv --heads 1 --work "$WORK_DIR" --out "$OUT/cv" --merge ;;
+    fit)   PYTHONPATH="$PROJECT_DIR" $T fit --heads $H --work "$WORK_DIR" --out "$OUT/call_detector_$NAME.pt" "$@" ;;
+    cv)    PYTHONPATH="$PROJECT_DIR" $T cv --heads $H --work "$WORK_DIR" --out "$OUT/cv" --fold "${SLURM_ARRAY_TASK_ID:?array task}" "$@" ;;
+    merge) PYTHONPATH="$PROJECT_DIR" $T cv --heads $H --work "$WORK_DIR" --out "$OUT/cv" --merge ;;
 esac

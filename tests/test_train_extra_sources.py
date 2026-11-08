@@ -79,3 +79,18 @@ def test_one_fold_then_merge_equals_the_files(tmp_path: Path, cfg: Preprocessing
     tcd.cv(cfg, tmp_path, folds=2, steps=2, n_out=1, merge=True)
     assert sorted(np.load(tmp_path / "oof_probs.npz").files) == ["c0", "c1", "c2", "c3"]
     assert (tmp_path / "learned_detections.json").exists()
+
+
+def test_real_gaps_between_positives_are_taught_as_background(tmp_path: Path, cfg: PreprocessingConfig) -> None:
+    rng = np.random.default_rng(5)
+    sf.write(tmp_path / "m0.flac", _minute(rng), SR)
+    (tmp_path / "positives.tsv").write_text("minute_id\tstart_s\tend_s\tsource\n"
+                                           "m0\t10.0\t10.5\trun_call\nm0\t10.8\t10.9\tcandidate\n"
+                                           "m0\t30.0\t30.2\tcandidate\nm0\t30.1\t30.6\trun_call\n")
+    plain = tcd.load_real(cfg, tmp_path)["real:m0"]
+    gaps = tcd.load_real(cfg, tmp_path, gaps=True)["real:m0"]
+    t = gaps["t"]
+    mid = (t > 10.55) & (t < 10.75)
+    assert (plain["y"][0][mid] == -1).all() and (gaps["y"][0][mid] == 0).all()
+    assert (gaps["y"][0][(t > 30.05) & (t < 30.55)] == 1).all()          # overlapping spans are one call, no gap
+    assert (gaps["y"][0][(t > 12) & (t < 29)] == -1).all()               # a wide gap stays ignored
