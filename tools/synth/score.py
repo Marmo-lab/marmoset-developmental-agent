@@ -21,6 +21,9 @@ exclusion is off: the recordings carry no wall-clock time. Each detection keeps 
 * **False alarms per hour**: detections that overlap no planted call, per hour of audio.
 * **Edges**: median |onset| and |offset| error (ms) of the IoU matches.
 
+``--model PATH --name NAME`` scores another checkpoint (e.g. one retrained on the train half):
+detections go to ``SET/detections_<NAME>/`` and scores to ``SET/scores_<NAME>.{json,png}``.
+
 Two views of the detections: ``detector`` (all of them) and ``front_end`` (without
 ``short_low_conf``, what reaches the training set). Splits: SNR level; call type x SNR
 for recall. Writes ``SET/scores.json`` and ``SET/scores.png``.
@@ -28,6 +31,7 @@ for recall. Writes ``SET/scores.json`` and ``SET/scores.png``.
 Usage (on the cluster, via tools/cluster/synth_score.sbatch):
     python tools/synth/score.py detect SET [--task-index I --n-tasks N]
     python tools/synth/score.py score SET
+    (either with --model PATH --name NAME)
 """
 
 from __future__ import annotations
@@ -52,24 +56,33 @@ def quality(duration_s: float, confidence: float) -> str:
     return "short_low_conf" if duration_s < SHORT_S and confidence < LOW_CONF else "long" if duration_s >= LONG_S else "ok"
 
 
-def detect(folder: Path, task: int, n_tasks: int) -> None:
+def _dirname(name: str) -> str:
+    return "detections" if name == "production" else f"detections_{name}"
+
+
+def detect(folder: Path, task: int, n_tasks: int, model: str = "", name: str = "production") -> None:
+    import dataclasses
+
     from marmoset_developmental_agent.config.agent_config import load_config
     from marmoset_developmental_agent.preprocessing.streaming import FileSource, detect_recording
 
     cfg = load_config().preprocessing
+    if model:
+        cfg = dataclasses.replace(cfg, learned_model_path=model)
     recs = list(csv.DictReader(open(folder / "recordings.tsv"), delimiter="\t"))[task::n_tasks]
     rows = []
     for r in recs:
         for d in detect_recording(FileSource(str(folder / "audio" / f"{r['rec_id']}.flac")), dt.datetime(2000, 1, 1, 12), cfg):
             rows.append({"rec_id": r["rec_id"], "start_s": round(d.start_s, 4), "end_s": round(d.end_s, 4),
                          "confidence": round(d.confidence, 3), "quality": quality(d.duration_s, d.confidence)})
-    (folder / "detections").mkdir(exist_ok=True)
-    tmp = folder / "detections" / f"{task:03d}.tmp"
+    dets = folder / _dirname(name)
+    dets.mkdir(exist_ok=True)
+    tmp = dets / f"{task:03d}.tmp"
     with open(tmp, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=["rec_id", "start_s", "end_s", "confidence", "quality"], delimiter="\t")
         w.writeheader()
         w.writerows(rows)
-    os.replace(tmp, folder / "detections" / f"{task:03d}.tsv")
+    os.replace(tmp, dets / f"{task:03d}.tsv")
     print(f"task {task}: {len(recs)} recordings, {len(rows)} detections", flush=True)
 
 
@@ -122,13 +135,13 @@ def _div(a: float, b: float) -> float:
     return a / b if b else float("nan")
 
 
-def score(folder: Path) -> Dict:
+def score(folder: Path, name: str = "production") -> Dict:
     recs = list(csv.DictReader(open(folder / "recordings.tsv"), delimiter="\t"))
     events: Dict[str, List[Dict]] = defaultdict(list)
     for e in csv.DictReader(open(folder / "events.tsv"), delimiter="\t"):
         events[e["rec_id"]].append(e)
     dets: Dict[str, List[Dict]] = defaultdict(list)
-    for p in sorted((folder / "detections").glob("*.tsv")):
+    for p in sorted((folder / _dirname(name)).glob("*.tsv")):
         for d in csv.DictReader(open(p), delimiter="\t"):
             dets[d["rec_id"]].append(d)
     seconds = {r["rec_id"]: 60.0 for r in recs}
@@ -171,8 +184,10 @@ def score(folder: Path) -> Dict:
                                             "recall_main": _div(sum(by_type_main[(t, snr)]), len(v)),
                                             "recall": _div(sum(by_type_any[(t, snr)]), len(v))}
         out["views"][view] = {"by_snr": levels, "by_type": types}
-    (folder / "scores.json").write_text(json.dumps(out, indent=1))
-    plot(out, folder / "scores.png")
+    out["model"] = name
+    stem = "scores" if name == "production" else f"scores_{name}"
+    (folder / f"{stem}.json").write_text(json.dumps(out, indent=1))
+    plot(out, folder / f"{stem}.png")
     return out
 
 
@@ -223,11 +238,15 @@ def main() -> None:
     ap.add_argument("set", type=Path)
     ap.add_argument("--task-index", type=int, default=int(os.environ.get("SLURM_ARRAY_TASK_ID", 0)))
     ap.add_argument("--n-tasks", type=int, default=1)
+    ap.add_argument("--model", default="", help="checkpoint to use instead of the production one")
+    ap.add_argument("--name", default="production", help="label of the model's detections and scores")
     a = ap.parse_args()
+    if a.model and a.name == "production":
+        ap.error("--model needs --name")
     if a.step == "detect":
-        detect(a.set, a.task_index, a.n_tasks)
+        detect(a.set, a.task_index, a.n_tasks, a.model, a.name)
         return
-    s = score(a.set)
+    s = score(a.set, a.name)
     for view, v in s["views"].items():
         print(view)
         for snr, r in v["by_snr"].items():

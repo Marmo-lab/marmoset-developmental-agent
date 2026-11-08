@@ -53,3 +53,13 @@ def test_figures_of_a_small_set(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     sf_.recall_by_type(folder, tmp_path / "types.png")
     assert (tmp_path / "curve.png").exists() and (tmp_path / "types.png").exists()
     assert sf_._db(20 * np.log10(1.5)) == "+3.5" and sf_._db(20 * np.log10(0.7)) == "-3"
+
+
+def test_another_checkpoint_writes_its_own_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests.test_generate import test_make_writes_audio_and_the_answer
+    test_make_writes_audio_and_the_answer(tmp_path, monkeypatch)
+    folder = tmp_path / "out"
+    detect(folder, 0, 1, model="models/call_detector_v1.pt", name="copy")
+    s = score(folder, "copy")
+    assert (folder / "detections_copy" / "000.tsv").exists() and not (folder / "detections").exists()
+    assert s["model"] == "copy" and (folder / "scores_copy.json").exists() and (folder / "scores_copy.png").exists()

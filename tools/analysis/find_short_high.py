@@ -33,14 +33,24 @@ Steps:
   heard the candidates as calls). The rest of the minute is not labelled: it may hold calls
   nobody found, so training ignores it rather than calling it background.
 
+* ``realeval RUN OUT --model M --name N`` (array): a detector checkpoint on the test half of
+  the scanned recordings (whole hours, the production path with the model swapped) and on
+  the night backgrounds (``--nights``, mono FLACs the user heard as call-free).
+* ``realscore RUN OUT --name N``: on the test half, the share of rule candidates the model's
+  detections overlap (all, and those the v4 run missed), its detections per hour; at night,
+  its detections per hour (false alarms).
+
 Writes under OUT: ``selftest.json``, ``scan/<recording_id>.tsv``, ``candidates.tsv``,
-``summary.json``, ``clips/<cand_id>.flac``, ``minutes/<minute_id>.flac`` and ``minutes/positives.tsv``.
+``summary.json``, ``clips/<cand_id>.flac``, ``minutes/<minute_id>.flac`` and ``minutes/positives.tsv``,
+``realeval_<N>/<recording_id>.tsv`` and ``realscore_<N>.json``.
 
 Usage (on the cluster, via tools/cluster/short_high.sbatch):
     python tools/analysis/find_short_high.py selftest SET OUT
     python tools/analysis/find_short_high.py scan RUN OUT [--task-index I --n-tasks N]
     python tools/analysis/find_short_high.py select RUN OUT [--n 150]
     python tools/analysis/find_short_high.py minutes RUN OUT
+    python tools/analysis/find_short_high.py realeval RUN OUT --model M --name N --nights DIR [--task-index I --n-tasks K]
+    python tools/analysis/find_short_high.py realscore RUN OUT --name N
 """
 
 from __future__ import annotations
@@ -279,14 +289,73 @@ def minutes(run: Path, out: Path) -> int:
     return n
 
 
+def realeval(run: Path, out: Path, model: str, name: str, nights: Path, task: int, n_tasks: int) -> None:
+    import dataclasses
+
+    from marmoset_developmental_agent.config.agent_config import load_config
+    from marmoset_developmental_agent.preprocessing.streaming import FileSource, detect_recording
+
+    cfg = load_config().preprocessing
+    cfg = dataclasses.replace(cfg, exclude_night=False, **({"learned_model_path": model} if model else {}))
+    jobs = [(r["recording_id"], r["path"], "day", r["start_time"]) for r in recording_half(run, "test")]
+    jobs += [(p.stem, str(p), "night", "2000-01-01T00:00:00") for p in sorted(nights.glob("*.flac"))]
+    d = out / f"realeval_{name}"
+    d.mkdir(parents=True, exist_ok=True)
+    for rid, path, kind, start in jobs[task::n_tasks]:
+        src = FileSource(path)
+        found = detect_recording(src, dt.datetime.fromisoformat(start), cfg)
+        tmp = d / f"{rid}.tmp"
+        with open(tmp, "w", newline="") as f:
+            w = csv.writer(f, delimiter="\t")
+            w.writerow(["kind", "duration_s", "start_s", "end_s", "confidence"])
+            w.writerows([kind, round(src.frames / src.sample_rate, 1), round(r.start_s, 3), round(r.end_s, 3),
+                         round(r.confidence, 3)] for r in found)
+            if not found:
+                w.writerow([kind, round(src.frames / src.sample_rate, 1), "", "", ""])
+        os.replace(tmp, d / f"{rid}.tsv")
+        print(f"{rid} ({kind}): {len(found)} detections", flush=True)
+
+
+def realscore(run: Path, out: Path, name: str) -> Dict:
+    d = out / f"realeval_{name}"
+    hours = {"day": 0.0, "night": 0.0}
+    n_det = {"day": 0, "night": 0}
+    caught, caught_missed = [], []
+    for p in sorted(d.glob("*.tsv")):
+        rows = list(csv.DictReader(open(p), delimiter="\t"))
+        kind = rows[0]["kind"]
+        hours[kind] += float(rows[0]["duration_s"]) / 3600
+        dets = [(float(r["start_s"]), float(r["end_s"])) for r in rows if r["start_s"]]
+        n_det[kind] += len(dets)
+        scan = out / "scan" / f"{p.stem}.tsv"
+        if kind == "day" and scan.exists():
+            for c in csv.DictReader(open(scan), delimiter="\t"):
+                a = float(c["start_s"])
+                hit = any(_ov(a, a + float(c["duration_s"]), x, y) for x, y in dets)
+                caught.append(hit)
+                if c["in_run_call"] == "0":
+                    caught_missed.append(hit)
+    res = {"model": name, "day_hours": round(hours["day"], 1), "night_hours": round(hours["night"], 1),
+           "candidates": len(caught), "candidates_caught": round(float(np.mean(caught)), 3) if caught else None,
+           "missed_by_v4": len(caught_missed),
+           "missed_by_v4_caught": round(float(np.mean(caught_missed)), 3) if caught_missed else None,
+           "detections_per_day_hour": round(n_det["day"] / hours["day"], 1) if hours["day"] else None,
+           "detections_per_night_hour": round(n_det["night"] / hours["night"], 2) if hours["night"] else None}
+    (out / f"realscore_{name}.json").write_text(json.dumps(res, indent=1))
+    return res
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("step", choices=["selftest", "scan", "select", "minutes"])
+    ap.add_argument("step", choices=["selftest", "scan", "select", "minutes", "realeval", "realscore"])
     ap.add_argument("src", type=Path, help="a synthetic set (selftest) or a corpus run (scan, select)")
     ap.add_argument("out", type=Path)
     ap.add_argument("--task-index", type=int, default=int(os.environ.get("SLURM_ARRAY_TASK_ID", 0)))
     ap.add_argument("--n-tasks", type=int, default=1)
     ap.add_argument("--n", type=int, default=150)
+    ap.add_argument("--model", default="", help="realeval: checkpoint (default: production)")
+    ap.add_argument("--name", default="production", help="realeval / realscore: label of the model")
+    ap.add_argument("--nights", type=Path, help="realeval: folder of call-free night FLACs")
     a = ap.parse_args()
     if a.step == "selftest":
         print(json.dumps(selftest(a.src, a.out), indent=1))
@@ -294,8 +363,12 @@ def main() -> None:
         scan(a.src, a.out, a.task_index, a.n_tasks)
     elif a.step == "select":
         print(json.dumps(select(a.src, a.out, a.n), indent=1))
-    else:
+    elif a.step == "minutes":
         minutes(a.src, a.out)
+    elif a.step == "realeval":
+        realeval(a.src, a.out, a.model, a.name, a.nights, a.task_index, a.n_tasks)
+    else:
+        print(json.dumps(realscore(a.src, a.out, a.name), indent=1))
 
 
 if __name__ == "__main__":

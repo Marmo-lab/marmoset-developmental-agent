@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Tuple
+
 import numpy as np
 
 import tools.analysis.find_short_high as fsh
@@ -68,7 +71,8 @@ def test_library_serves_the_candidates(tmp_path) -> None:
     assert sh.feedback()["r_0000"]["verdict"] == "noise"
 
 
-def test_minutes_cut_the_train_half_with_positives(tmp_path) -> None:
+def _tiny_run(tmp_path: Path) -> Tuple[Path, Path]:
+    """Four 3-minute day recordings (4 capsules), each with one run call and one missed candidate."""
     import csv
     import json
 
@@ -89,6 +93,14 @@ def test_minutes_cut_the_train_half_with_positives(tmp_path) -> None:
             w.writeheader()
             w.writerow({"cand_id": f"{rid}_0000", "recording_id": rid, "start_s": 75.0, "duration_s": 0.1, "peak_hz": 15000,
                         "high_db": 20, "lead_db": 10, "in_run_call": 0})
+    return run, out
+
+
+def test_minutes_cut_the_train_half_with_positives(tmp_path: Path) -> None:
+    import csv
+
+    import soundfile as sf
+    run, out = _tiny_run(tmp_path)
     train = [r["recording_id"] for r in fsh.recording_half(run, "train")]
     test = [r["recording_id"] for r in fsh.recording_half(run, "test")]
     assert len(train) == 2 and not set(train) & set(test)
@@ -98,3 +110,17 @@ def test_minutes_cut_the_train_half_with_positives(tmp_path) -> None:
     assert sorted((p["source"], p["start_s"], p["end_s"]) for p in pos if p["minute_id"] == f"{train[0]}_m01") == [
         ("candidate", "15.0", "15.1"), ("run_call", "10.0", "11.0")]
     assert sf.info(out / "minutes" / f"{train[0]}_m01.flac").duration == 60
+
+
+def test_realeval_runs_a_model_on_the_test_half_and_nights(tmp_path: Path) -> None:
+    import soundfile as sf
+    run, out = _tiny_run(tmp_path)
+    nights = tmp_path / "nights"
+    nights.mkdir()
+    sf.write(nights / "n0.flac", np.zeros(60 * SR, np.float32), SR)
+    fsh.realeval(run, out, "models/call_detector_v1.pt", "v1", nights, 0, 1)
+    files = sorted(p.stem for p in (out / "realeval_v1").glob("*.tsv"))
+    assert files == sorted([r["recording_id"] for r in fsh.recording_half(run, "test")] + ["n0"])
+    r = fsh.realscore(run, out, "v1")
+    assert r["candidates"] == 2 and r["missed_by_v4"] == 2 and r["candidates_caught"] == 0.0
+    assert abs(r["day_hours"] - 0.1) < 0.01 and r["detections_per_night_hour"] == 0.0

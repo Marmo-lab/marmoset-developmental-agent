@@ -19,6 +19,18 @@ at the config's cutoff, ``learned_features``. Frame targets: ``c`` = 1, unlabell
         was matched: one-to-one, split into several detections, merged with a neighbour,
         or missed, with the onset/offset error of the one-to-one matches.
 
+Extra sources (``--synth DIR``, ``--real DIR``; user, 2026-11-08). The hand labels hold no
+short high call (tsik, tsik-ek, seep), and the detector misses them (docs/SYNTH_EVAL.md):
+* ``--synth``: a synthetic set of ``tools/synth/generate.py`` (built with ``--half train``).
+  Every planted call is 1 with its edges, the call-free night background 0.
+* ``--real``: ``find_short_high.py minutes``: real day minutes whose positives (rule candidates
+  the user heard as calls, and the run's calls) are 1; the rest is ignored (it may hold calls
+  nobody found), and so are its edges (the rule's bounds are approximate). Crops from these
+  minutes are centred on a random positive frame, so each carries supervision.
+Each batch draws ``--mix`` (synthetic, real) of its crops from these sources and the rest from
+the hand clips, so the 45 labelled minutes keep half the weight. ``cv`` folds the hand clips
+only; the extra sources are in every fold's training set.
+
 Training: random 4 s crops, batch 32, AdamW with a one-cycle schedule (peak 2e-3),
 ``--steps`` updates, masked BCE. A random linear spectral tilt (sd 2 dB across the band)
 is applied to half the crops, for robustness to how different recordings colour the
@@ -27,6 +39,8 @@ spectrum. Seeds are fixed; on CPU a run is reproducible.
 Usage:
     python tools/analysis/train_call_detector.py cv --out outputs/learned_cv
     python tools/analysis/train_call_detector.py fit --out models/call_detector_v1.pt
+    python tools/analysis/train_call_detector.py cv --heads 1 --out outputs/learned_cv_v2 \
+        --synth SYNTH_TRAIN_SET --real SHORT_HIGH/minutes          # with the extra sources
     python tools/analysis/train_call_detector.py evaluate outputs/learned_cv/learned_detections.json \
         --rules outputs/calib_harmonic.json outputs/heldout_harmonic.json
 """
@@ -96,8 +110,75 @@ def load_clips(cfg: PreprocessingConfig) -> Dict[str, Clip]:
     return out
 
 
-def train(clips: Dict[str, Clip], ids: List[str], steps: int, seed: int, n_out: int = 3) -> CallNet:
+def _features(x: np.ndarray, sr: int, cfg: PreprocessingConfig) -> Tuple[np.ndarray, np.ndarray]:
+    x = highpass_filter(x, sr, cfg.highpass_cutoff_hz, cfg.highpass_order)
+    feats, t = learned_features(x, sr, cfg)
+    return normalise(feats), t
+
+
+def _edges(t: np.ndarray, spans: List[Tuple[float, float]], tgt: np.ndarray, which: int) -> None:
+    hop = t[1] - t[0]
+    for span in spans:
+        edge = span[which]
+        near = np.abs(t - edge) <= 4 * EDGE_SIGMA_FRAMES * hop
+        tgt[near] = np.maximum(tgt[near], np.exp(-0.5 * ((t[near] - edge) / (EDGE_SIGMA_FRAMES * hop)) ** 2))
+
+
+def load_synth(cfg: PreprocessingConfig, folder: Path) -> Dict[str, Clip]:
+    """A synthetic set as clips: planted calls 1 (with edges), background 0."""
+    import soundfile as sf
+    events: Dict[str, List[Tuple[float, float]]] = {}
+    for e in csv.DictReader(open(folder / "events.tsv"), delimiter="\t"):
+        events.setdefault(e["rec_id"], []).append((float(e["onset_s"]), float(e["offset_s"])))
+    out: Dict[str, Clip] = {}
+    for r in csv.DictReader(open(folder / "recordings.tsv"), delimiter="\t"):
+        x, sr = sf.read(folder / "audio" / f"{r['rec_id']}.flac", dtype="float32")
+        feats, t = _features(x, sr, cfg)
+        spans = events.get(r["rec_id"], [])
+        y, on, off = np.zeros(len(t), np.float32), np.zeros(len(t), np.float32), np.zeros(len(t), np.float32)
+        for a, b in spans:
+            y[(t >= a) & (t <= b)] = 1
+        _edges(t, spans, on, 0)
+        _edges(t, spans, off, 1)
+        out[f"synth:{r['rec_id']}"] = {"x": feats, "y": np.stack([y, on, off]), "t": t, "day": np.int64(-1),
+                                       "lead": np.float64(0)}
+    return out
+
+
+def load_real(cfg: PreprocessingConfig, folder: Path) -> Dict[str, Clip]:
+    """Real minutes as clips: positives 1, everything else (and every edge) ignored."""
+    import soundfile as sf
+    spans: Dict[str, List[Tuple[float, float]]] = {}
+    for r in csv.DictReader(open(folder / "positives.tsv"), delimiter="\t"):
+        spans.setdefault(r["minute_id"], []).append((float(r["start_s"]), float(r["end_s"])))
+    out: Dict[str, Clip] = {}
+    for mid, ss in sorted(spans.items()):
+        x, sr = sf.read(folder / f"{mid}.flac", dtype="float32")
+        feats, t = _features(x, sr, cfg)
+        y = np.full(len(t), -1, np.float32)
+        for a, b in ss:
+            y[(t >= a) & (t <= b)] = 1
+        if not (y == 1).any():
+            continue
+        ign = np.full(len(t), -1, np.float32)
+        out[f"real:{mid}"] = {"x": feats, "y": np.stack([y, ign, ign.copy()]), "t": t, "day": np.int64(-1),
+                              "lead": np.float64(0), "pos": np.flatnonzero(y == 1)}
+    return out
+
+
+def _crop_start(c: Clip, rng: np.random.Generator) -> int:
+    n = c["x"].shape[1]
+    if "pos" in c:                                    # centre a crop of a real minute on a positive frame
+        return int(np.clip(c["pos"][rng.integers(len(c["pos"]))] - rng.integers(CROP // 4, 3 * CROP // 4), 0, n - CROP))
+    return int(rng.integers(0, n - CROP))
+
+
+def train(clips: Dict[str, Clip], ids: List[str], steps: int, seed: int, n_out: int = 3,
+          extra: Tuple[Tuple[List[str], float], ...] = ()) -> CallNet:
+    """``extra``: (clip ids, share of each batch) per extra source; the hand ``ids`` fill the rest."""
     rng = np.random.default_rng(seed)
+    pools = [(ids, 1.0 - sum(w for e, w in extra if e))] + [(e, w) for e, w in extra if e]
+    shares = np.array([w for _, w in pools])
     torch.manual_seed(seed)
     net = CallNet(next(iter(clips.values()))["x"].shape[0], n_out=n_out)
     opt = torch.optim.AdamW(net.parameters(), 2e-3, weight_decay=1e-3)
@@ -106,8 +187,9 @@ def train(clips: Dict[str, Clip], ids: List[str], steps: int, seed: int, n_out: 
     for _ in range(steps):
         xs, ys = [], []
         for _ in range(32):
-            c = clips[ids[rng.integers(len(ids))]]
-            s = rng.integers(0, c["x"].shape[1] - CROP)
+            pool = pools[rng.choice(len(pools), p=shares / shares.sum())][0] if len(pools) > 1 else ids
+            c = clips[pool[rng.integers(len(pool))]]
+            s = _crop_start(c, rng)
             x = c["x"][:, s:s + CROP].copy()
             if rng.random() < 0.5:
                 x += (rng.normal(0, 0.1) * np.linspace(-1, 1, x.shape[0]))[:, None].astype(np.float32)
@@ -118,7 +200,7 @@ def train(clips: Dict[str, Clip], ids: List[str], steps: int, seed: int, n_out: 
         w = m.clone()
         w[:, 1:] *= 1 + EDGE_POS_WEIGHT * y[:, 1:].clamp(min=0)
         bce = nn.functional.binary_cross_entropy_with_logits(net(x), y.clamp(min=0), reduction="none")
-        loss = sum((bce[:, k] * w[:, k]).sum() / w[:, k].sum() for k in range(n_out))
+        loss = sum((bce[:, k] * w[:, k]).sum() / w[:, k].sum().clamp(min=1.0) for k in range(n_out))
         opt.zero_grad()
         loss.backward()
         opt.step()
@@ -144,14 +226,32 @@ def to_calls(prob: np.ndarray, clip: Clip, cfg: PreprocessingConfig) -> List[Tup
             for c in activity_to_calls(act, cfg) if c.end_s - lead > 0 and c.start_s - lead < CLIP_S]
 
 
-def cv(cfg: PreprocessingConfig, out: Path, folds: int, steps: int, n_out: int = 3) -> None:
+def load_extra(cfg: PreprocessingConfig, synth: List[Path], real: List[Path],
+               mix: Tuple[float, float]) -> Tuple[Dict[str, Clip], Tuple[Tuple[List[str], float], ...]]:
+    clips: Dict[str, Clip] = {}
+    groups = []
+    for dirs, loader, share in ((synth, load_synth, mix[0]), (real, load_real, mix[1])):
+        got: Dict[str, Clip] = {}
+        for d in dirs:
+            got.update(loader(cfg, d))
+        clips.update(got)
+        groups.append((sorted(got), share))
+        if dirs:
+            print(f"{loader.__name__}: {len(got)} clips, {share:.0%} of each batch", flush=True)
+    return clips, tuple(groups)
+
+
+def cv(cfg: PreprocessingConfig, out: Path, folds: int, steps: int, n_out: int = 3,
+       synth: List[Path] = (), real: List[Path] = (), mix: Tuple[float, float] = (0.25, 0.25)) -> None:
     clips = load_clips(cfg)
     ids = sorted(clips, key=lambda c: (int(clips[c]["day"]), c))
+    more, extra = load_extra(cfg, list(synth), list(real), mix)
+    clips.update(more)
     groups = [ids[i::folds] for i in range(folds)]
     probs: Dict[str, np.ndarray] = {}
     t0 = time.time()
     for k, test in enumerate(groups):
-        net = train(clips, [c for c in ids if c not in test], steps, seed=k, n_out=n_out)
+        net = train(clips, [c for c in ids if c not in test], steps, seed=k, n_out=n_out, extra=extra)
         for c in test:
             probs[c] = predict(net, clips[c])
         print(f"fold {k + 1}/{folds} ({len(test)} clips) done, {time.time() - t0:.0f} s", flush=True)
@@ -164,9 +264,13 @@ def cv(cfg: PreprocessingConfig, out: Path, folds: int, steps: int, n_out: int =
     print(f"wrote {out}/oof_probs.npz and learned_detections.json")
 
 
-def fit(cfg: PreprocessingConfig, out: Path, steps: int, n_out: int = 3) -> None:
+def fit(cfg: PreprocessingConfig, out: Path, steps: int, n_out: int = 3,
+        synth: List[Path] = (), real: List[Path] = (), mix: Tuple[float, float] = (0.25, 0.25)) -> None:
     clips = load_clips(cfg)
-    net = train(clips, sorted(clips), steps, seed=0, n_out=n_out)
+    ids = sorted(clips)
+    more, extra = load_extra(cfg, list(synth), list(real), mix)
+    clips.update(more)
+    net = train(clips, ids, steps, seed=0, n_out=n_out, extra=extra)
     out.parent.mkdir(parents=True, exist_ok=True)
     save_call_detector(net, out)
     print(f"wrote {out}")
@@ -247,6 +351,10 @@ def main() -> None:
     f.add_argument("--out", required=True)
     f.add_argument("--steps", type=int, default=1000)
     f.add_argument("--heads", type=int, choices=(1, 3), default=3)
+    for p_ in (c, f):
+        p_.add_argument("--synth", type=Path, action="append", default=[], help="synthetic set (generate.py --half train)")
+        p_.add_argument("--real", type=Path, action="append", default=[], help="find_short_high.py minutes folder")
+        p_.add_argument("--mix", default="0.25,0.25", help="share of each batch from synthetic, real")
     e = sub.add_parser("evaluate")
     e.add_argument("learned_json")
     e.add_argument("--rules", nargs="+", required=True)
@@ -256,10 +364,11 @@ def main() -> None:
         return
     torch.set_num_threads(4)
     cfg = PreprocessingConfig.learned()
+    mix = tuple(float(v) for v in a.mix.split(","))
     if a.cmd == "cv":
-        cv(cfg, Path(a.out), a.folds, a.steps, a.heads)
+        cv(cfg, Path(a.out), a.folds, a.steps, a.heads, a.synth, a.real, mix)
     else:
-        fit(cfg, Path(a.out), a.steps, a.heads)
+        fit(cfg, Path(a.out), a.steps, a.heads, a.synth, a.real, mix)
 
 
 if __name__ == "__main__":
