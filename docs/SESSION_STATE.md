@@ -128,6 +128,16 @@ count (1), not on the missing timestamp.
   defaults and `config/corpus_day.yaml`.
 - Superseded listening tools removed; `call_library.py` replaces them.
 
+### 2026-11-08
+
+- **Synthetic evaluation and detector v2a** (docs/SYNTH_EVAL.md): v1 missed short high calls (tsik, tsik-ek, seep);
+  the colony makes them (user, by ear; v4 missed ~128/h). Retrained with a synthetic train half and real minutes,
+  gaps taught as background: **v2a**, confirmed once on the blind test set (TEST_PROTOCOL addendum). Frozen; now the
+  production default (`learned_model_path`).
+- **`RUN=v5_calls`**: the full corpus again with v2a, same flags as v4 (`--n-tasks 200 --export-calls`, at most 24
+  at once): detect 66590739, then `merge_calls` 66590766, then full cleaning 66590767 (chained with
+  `--dependency`). v4 stays as the v1 corpus for comparison.
+
 ### 2026-11-02
 
 - **Phee database score** (DETECTOR_EVAL finding 15): recall 0.997 on 5,817 phees; by ear the detector's ends are
