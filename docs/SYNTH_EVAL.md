@@ -157,3 +157,12 @@ Reading: the gap fix removes v2's merges (13% to 4%) and lifts every hand-label 
 production (IoU recall 0.81 to 0.90). v2's higher share of caught real candidates is partly its
 merging: a long bridged detection covers candidates between calls. v2a and v2b now report the
 newly caught calls as separate detections (+9-12% detections per hour).
+
+### Decision: v2a frozen (user, 2026-11-08)
+v2a (`models/call_detector_v2a.pt`, sha256 `bbf29f92945877d3...`) is the detector candidate. No further variants
+(architecture, data, steps) until the developmental agent shows a problem that traces to the front end: each
+further variant chosen on the same 45 clips and synthetic set makes those tests less honest. Known limitation, on
+record: v2a still misses about 39% of the short high calls v4 missed, so the corpus under-represents tsik and seep;
+on the strict IoU test its short-call boundaries are weak (alarm 0.44, tsik-ek 0.43 at +6 dB) though it touches
+91-95% of them. Confirmed once on the blind test set (`docs/TEST_PROTOCOL.md`, addendum 2026-11-08) before the
+corpus is rerun. Production (`learned_model_path`) still points at v1 until the user switches it.

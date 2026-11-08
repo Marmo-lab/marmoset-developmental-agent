@@ -52,3 +52,18 @@ The test is scored twice, and both results are reported:
 
 Clip ts_07 contains a dense series that the user labelled as fewer, longer calls. Its scores are also reported on
 their own.
+
+## Addendum, 2026-11-08: scoring v2a once (written before scoring)
+
+**Model.** `models/call_detector_v2a.pt`, sha256 prefix `bbf29f92945877d3`, frozen today as the detector candidate
+(docs/SYNTH_EVAL.md, v2a). It was trained on the 45 calibration and held-out clips, a synthetic train half and 145
+real day minutes; never on test labels. Checked before scoring: none of the 15 test clips comes from a recording
+whose minutes v2a trained on, and the synthetic backgrounds are night recordings. No v2a decision used the test set.
+
+**What runs.** The same scorer and metrics as the first scoring (`score_testset.py`), from the current commit, with
+v2a and, for a same-code comparison, v1 again. `PreprocessingConfig.learned()` as of today. Both label modes, both
+views (all detections; without `short_low_conf`), the three subsets, bootstrap intervals.
+
+**Rules.** Score once. Report everything. No model, threshold or setting changes in response; the result decides
+only whether v2a is confirmed or the decision returns to the user. After this the test set is spent for model choice
+between v1 and v2a; any later model needs new untouched clips.
