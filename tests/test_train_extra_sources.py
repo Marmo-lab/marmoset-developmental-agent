@@ -58,3 +58,24 @@ def test_training_mixes_the_sources(tmp_path: Path, cfg: PreprocessingConfig) ->
                        "t": t, "day": np.int64(-1), "lead": np.float64(0), "pos": np.flatnonzero((t > 2) & (t < 2.2))}}
     net = tcd.train({**hand, **real}, ["h"], steps=3, seed=0, n_out=1, extra=(([], 0.25), (["real:m"], 0.25)))
     assert np.isfinite(tcd.predict(net, hand["h"])).all()
+
+
+def test_hand_sets_map_to_the_cluster_layout(tmp_path: Path) -> None:
+    assert tcd.hand_sets() == tcd.SETS
+    sets = tcd.hand_sets(tmp_path)
+    assert sets[0] == (str(tmp_path / "labeling" / "clips.csv"), tcd.SETS[0][1], str(tmp_path / "clip_audio48"))
+    assert sets[1][2] == str(tmp_path / "heldout_audio48")
+
+
+def test_one_fold_then_merge_equals_the_files(tmp_path: Path, cfg: PreprocessingConfig, monkeypatch: pytest.MonkeyPatch) -> None:
+    rng = np.random.default_rng(4)
+    t = np.arange(600) * 0.01
+    fake = {f"c{k}": {"x": rng.standard_normal((92, 600)).astype(np.float32), "y": np.zeros((3, 600), np.float32),
+                      "t": t, "day": np.int64(k), "lead": np.float64(0)} for k in range(4)}
+    monkeypatch.setattr(tcd, "load_clips", lambda cfg, sets=tcd.SETS: {k: dict(v) for k, v in fake.items()})
+    for k in range(2):
+        tcd.cv(cfg, tmp_path, folds=2, steps=2, n_out=1, only=k)
+    assert sorted(p.name for p in tmp_path.glob("fold_*.npz")) == ["fold_0.npz", "fold_1.npz"]
+    tcd.cv(cfg, tmp_path, folds=2, steps=2, n_out=1, merge=True)
+    assert sorted(np.load(tmp_path / "oof_probs.npz").files) == ["c0", "c1", "c2", "c3"]
+    assert (tmp_path / "learned_detections.json").exists()

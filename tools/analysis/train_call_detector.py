@@ -31,6 +31,11 @@ Each batch draws ``--mix`` (synthetic, real) of its crops from these sources and
 the hand clips, so the 45 labelled minutes keep half the weight. ``cv`` folds the hand clips
 only; the extra sources are in every fold's training set.
 
+On the cluster (``tools/cluster/train_detector.sbatch``): ``--work WORK_DIR`` reads the same
+clips from the cluster layout (``hand_sets``), and ``cv --fold K`` trains and scores one fold
+(an array task, ``fold_K.npz``); ``cv --merge`` joins the folds into the outputs of a full ``cv``.
+A fold's model is the same either way (seed = fold index).
+
 Training: random 4 s crops, batch 32, AdamW with a one-cycle schedule (peak 2e-3),
 ``--steps`` updates, masked BCE. A random linear spectral tilt (sd 2 dB across the band)
 is applied to half the crops, for robustness to how different recordings colour the
@@ -54,7 +59,7 @@ import datetime as dt
 import json
 import time
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -77,10 +82,19 @@ EDGE_POS_WEIGHT = 9.0  # edge frames are rare; weight loss terms by 1 + 9 * targ
 Clip = Dict[str, np.ndarray]
 
 
-def load_clips(cfg: PreprocessingConfig) -> Dict[str, Clip]:
+def hand_sets(work: Optional[Path] = None) -> Tuple[Tuple[str, str, str], ...]:
+    """(clips.csv, labels.csv, audio dir) per labelled set: the repo's ``labeling/`` layout, or the
+    cluster's ``$WORK_DIR`` one (the same files, checked by checksum 2026-11-08)."""
+    if work is None:
+        return SETS
+    return ((str(work / "labeling" / "clips.csv"), SETS[0][1], str(work / "clip_audio48")),
+            (str(work / "labeling_heldout" / "clips.csv"), SETS[1][1], str(work / "heldout_audio48")))
+
+
+def load_clips(cfg: PreprocessingConfig, sets: Tuple[Tuple[str, str, str], ...] = SETS) -> Dict[str, Clip]:
     """Production features and frame targets for every labelled clip."""
     out: Dict[str, Clip] = {}
-    for clips_csv, labels_csv, audio_dir in SETS:
+    for clips_csv, labels_csv, audio_dir in sets:
         labels: Dict[str, List[Tuple[str, float, float]]] = {}
         for r in csv.DictReader(open(labels_csv)):
             labels.setdefault(r["clip_id"], []).append((r["label"], float(r["clip_start_s"]), float(r["clip_end_s"])))
@@ -242,20 +256,32 @@ def load_extra(cfg: PreprocessingConfig, synth: List[Path], real: List[Path],
 
 
 def cv(cfg: PreprocessingConfig, out: Path, folds: int, steps: int, n_out: int = 3,
-       synth: List[Path] = (), real: List[Path] = (), mix: Tuple[float, float] = (0.25, 0.25)) -> None:
-    clips = load_clips(cfg)
+       synth: List[Path] = (), real: List[Path] = (), mix: Tuple[float, float] = (0.25, 0.25),
+       sets: Tuple[Tuple[str, str, str], ...] = SETS, only: Optional[int] = None, merge: bool = False) -> None:
+    """All folds, or (``only``) one fold to ``fold_K.npz``, or (``merge``) join the fold files."""
+    clips = load_clips(cfg, sets)
     ids = sorted(clips, key=lambda c: (int(clips[c]["day"]), c))
-    more, extra = load_extra(cfg, list(synth), list(real), mix)
-    clips.update(more)
     groups = [ids[i::folds] for i in range(folds)]
-    probs: Dict[str, np.ndarray] = {}
-    t0 = time.time()
-    for k, test in enumerate(groups):
-        net = train(clips, [c for c in ids if c not in test], steps, seed=k, n_out=n_out, extra=extra)
-        for c in test:
-            probs[c] = predict(net, clips[c])
-        print(f"fold {k + 1}/{folds} ({len(test)} clips) done, {time.time() - t0:.0f} s", flush=True)
     out.mkdir(parents=True, exist_ok=True)
+    probs: Dict[str, np.ndarray] = {}
+    if merge:
+        for k in range(folds):
+            probs.update(dict(np.load(out / f"fold_{k}.npz")))
+    else:
+        more, extra = load_extra(cfg, list(synth), list(real), mix)
+        clips.update(more)
+        t0 = time.time()
+        for k, test in enumerate(groups):
+            if only is not None and k != only:
+                continue
+            net = train(clips, [c for c in ids if c not in test], steps, seed=k, n_out=n_out, extra=extra)
+            fold = {c: predict(net, clips[c]) for c in test}
+            probs.update(fold)
+            if only is not None:
+                np.savez(out / f"fold_{k}.npz", **fold)
+            print(f"fold {k + 1}/{folds} ({len(test)} clips) done, {time.time() - t0:.0f} s", flush=True)
+        if only is not None:
+            return
     np.savez(out / "oof_probs.npz", **probs)
     dets = {c: {"learned": {"mean": to_calls(probs[c], clips[c], cfg)}} for c in ids}
     json.dump({"created": dt.datetime.now().isoformat(timespec="seconds"), "folds": folds, "steps": steps,
@@ -265,8 +291,9 @@ def cv(cfg: PreprocessingConfig, out: Path, folds: int, steps: int, n_out: int =
 
 
 def fit(cfg: PreprocessingConfig, out: Path, steps: int, n_out: int = 3,
-        synth: List[Path] = (), real: List[Path] = (), mix: Tuple[float, float] = (0.25, 0.25)) -> None:
-    clips = load_clips(cfg)
+        synth: List[Path] = (), real: List[Path] = (), mix: Tuple[float, float] = (0.25, 0.25),
+        sets: Tuple[Tuple[str, str, str], ...] = SETS) -> None:
+    clips = load_clips(cfg, sets)
     ids = sorted(clips)
     more, extra = load_extra(cfg, list(synth), list(real), mix)
     clips.update(more)
@@ -355,6 +382,9 @@ def main() -> None:
         p_.add_argument("--synth", type=Path, action="append", default=[], help="synthetic set (generate.py --half train)")
         p_.add_argument("--real", type=Path, action="append", default=[], help="find_short_high.py minutes folder")
         p_.add_argument("--mix", default="0.25,0.25", help="share of each batch from synthetic, real")
+        p_.add_argument("--work", type=Path, help="read the hand clips from the cluster's WORK_DIR layout")
+    c.add_argument("--fold", type=int, help="train and score only this fold (writes fold_K.npz)")
+    c.add_argument("--merge", action="store_true", help="join fold_K.npz files into the cv outputs")
     e = sub.add_parser("evaluate")
     e.add_argument("learned_json")
     e.add_argument("--rules", nargs="+", required=True)
@@ -365,10 +395,11 @@ def main() -> None:
     torch.set_num_threads(4)
     cfg = PreprocessingConfig.learned()
     mix = tuple(float(v) for v in a.mix.split(","))
+    sets = hand_sets(a.work)
     if a.cmd == "cv":
-        cv(cfg, Path(a.out), a.folds, a.steps, a.heads, a.synth, a.real, mix)
+        cv(cfg, Path(a.out), a.folds, a.steps, a.heads, a.synth, a.real, mix, sets, a.fold, a.merge)
     else:
-        fit(cfg, Path(a.out), a.steps, a.heads, a.synth, a.real, mix)
+        fit(cfg, Path(a.out), a.steps, a.heads, a.synth, a.real, mix, sets)
 
 
 if __name__ == "__main__":
