@@ -153,7 +153,10 @@ class PreprocessingConfig:
     # the detection signal high-passed at highpass_cutoff_hz, 1 kHz in :meth:`learned`.
     # 1024 / 480 at 48 kHz = 21 ms window, 10 ms hop; 250 Hz bands up to Nyquist. These
     # must match the checkpoint, which was trained with exactly these values.
-    learned_model_path: str = "models/call_detector_v1.pt"  # [ours] relative to the repo root
+    # v2a since 2026-11-08 (user): retrained with synthetic and real short high calls, gaps between
+    # real calls taught as background; confirmed once on the blind test set (docs/SYNTH_EVAL.md,
+    # docs/TEST_PROTOCOL.md addendum). v1 (hand labels only) stays in models/ for comparison.
+    learned_model_path: str = "models/call_detector_v2a.pt"  # [ours] relative to the repo root
     learned_threshold: float = 0.5  # [ours]
     learned_n_fft: int = 1024  # [ours]
     learned_hop_length: int = 480  # [ours]
