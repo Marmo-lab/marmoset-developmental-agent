@@ -69,7 +69,7 @@ detector's maximum call probability inside the call.
 - **Open:** whether our colony produces such calls (and the labeller did not hear or mark
   them) or rarely does. Not separable from the labels alone.
 
-### Search for short high calls in our recordings (2026-11-05, running)
+### Search for short high calls in our recordings (2026-11-05)
 `tools/analysis/find_short_high.py`: a plain energy rule, independent of the learned detector
 (11.5-20 kHz at least 15 dB above its median and 8 dB above the call band, 0.03-0.5 s).
 Selftest on v1 (+20 / +6 dB): it finds tsik 0.68 / 0.65, tsik-ek 0.93 / 0.80, seep 0.81 /
@@ -77,7 +77,14 @@ Selftest on v1 (+20 / +6 dB): it finds tsik 0.68 / 0.65, tsik-ek 0.93 / 0.80, se
 background. Scan: 60 day recordings (07:00-17:59) of v4; the strongest candidates are cut
 to 2 s clips for the library's `/short_high` page, where the user listens.
 
-If the colony does make them, the plan (user, 2026-11-05): fine-tune the detector on a small
+Result: 60 day recordings (60.1 h), 30,158 candidates (502/h), 7,671 outside every v4 call
+(128/h, against v4's 1,271 detected calls per day hour). Listening (user, 2026-11-08, a random
+look through the 150 strongest missed candidates): **all are calls.** So the colony does make
+short high calls, the v4 corpus misses them, and the hand labels hold none. By eye most are
+broadband 10-20 kHz bursts with sharp edges, some tonal sweeps at 15-20 kHz: not the same
+shape as the Turesson tsiks (13-14 kHz sweeps).
+
+Since the colony does make them, the plan (user, 2026-11-05): fine-tune the detector on a small
 share of synthetic recordings so it meets these calls, then rerun the evaluation on the
 rest. The donors must be split between the two shares (a donor heard in training would make
 the test easy), and the test recordings must not share a background minute with training.
