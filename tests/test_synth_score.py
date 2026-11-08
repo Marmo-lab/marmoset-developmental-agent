@@ -63,3 +63,13 @@ def test_another_checkpoint_writes_its_own_files(tmp_path: Path, monkeypatch: py
     s = score(folder, "copy")
     assert (folder / "detections_copy" / "000.tsv").exists() and not (folder / "detections").exists()
     assert s["model"] == "copy" and (folder / "scores_copy.json").exists() and (folder / "scores_copy.png").exists()
+
+
+def test_model_comparison_figure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from tools.analysis import synth_figures as sf_
+    test_detect_and_score_a_small_set(tmp_path, monkeypatch)
+    folder = tmp_path / "out"
+    detect(folder, 0, 1, model="models/call_detector_v1.pt", name="copy")
+    score(folder, "copy")
+    sf_.compare_models(folder, "copy", tmp_path / "models.png", snr="1.5")
+    assert (tmp_path / "models.png").exists()

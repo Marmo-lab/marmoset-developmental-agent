@@ -88,3 +88,32 @@ Since the colony does make them, the plan (user, 2026-11-05): fine-tune the dete
 share of synthetic recordings so it meets these calls, then rerun the evaluation on the
 rest. The donors must be split between the two shares (a donor heard in training would make
 the test easy), and the test recordings must not share a background minute with training.
+
+### Retraining with short high calls: v2 (2026-11-08)
+Decided with the user: train on the 45 hand clips plus a small synthetic share (50 recordings per
+level from the **train half** of donors and backgrounds, `generate.py --half train`, 6,000 calls)
+plus real minutes (145 minutes from the train half of the 60 scanned recordings, rule candidates
+and v4 calls as positives, the rest ignored). Each batch: 50% hand, 25% synthetic, 25% real. One
+head, 1,000 steps, as production. Tested on what training never saw. Results in
+`analysis/detector_v2/` and `analysis/synth_eval/v2test/`; `figures/synth_v2test_models.png`.
+
+| test | production (v1) | v2 |
+|---|---|---|
+| synthetic held-out, recall +20 / +6 / -3 dB | 0.56 / 0.44 / 0.21 | 0.83 / 0.73 / 0.63 |
+| synthetic held-out, precision +20 / +6 / -3 dB | 0.90 / 0.97 / 0.85 | 0.82 / 0.79 / 0.81 |
+| synthetic, false alarms per hour | 0-0.2 | 2.8-8.4 (short pieces, median 0.35 s from a call) |
+| tsik / tsik-ek / seep recall at +6 dB | 0.02 / 0.01 / 0.05 | 0.56 / 0.36 / 0.48 |
+| real test half: rule candidates caught (all / missed by v4) | 0.74 / 0.00 | 0.95 / 0.81 |
+| real test half: detections per day hour; call seconds per hour | 1,354; 1,038 | 1,363; 1,293 |
+| call-free nights (10 h): detections per hour | 0 | 0.1 |
+| hand labels, cross-validated: P / R / F1 | 0.94 / 0.90 / 0.92 | 0.91 / 0.93 / 0.92 |
+| hand labels: IoU recall; merged; split; offset error | 0.81; 0.05; 0.05; 44 ms | 0.77; 0.13; 0.02; 54 ms |
+
+Reading: v2 finds most of the short high calls, synthetic and real, at no cost in F1 on the hand
+labels and without night false alarms. Its cost is merging: on the real test half the number of
+detections barely moves while call time grows 25%, because many of the newly caught calls sit
+next to another call and extend its detection; on the hand labels merges rise from 5% to 13%.
+Open: how many of those merges join two labelled calls through a short high call between them
+that the hand labels never marked (then v2 is right to see sound there, wrong only to join), and
+whether the real minutes' ignored gaps teach the model to bridge. v2 is not production;
+`learned_model_path` still points at v1.

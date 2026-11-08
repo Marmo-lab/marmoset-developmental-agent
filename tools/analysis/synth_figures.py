@@ -11,11 +11,15 @@ matching of ``score.py`` (IoU >= 0.5; phee, twitter and trill by any overlap).
   calls, are the independent units, since calls in one minute share a background].
 * ``<set>_recall_by_type.png``: recall per call type and SNR, a one-hue heat map, rows
   sorted by recall at the highest SNR.
+* ``<set>_models.png`` (``--compare NAME``): the production detector against another checkpoint
+  scored on the same set (``score.py --name NAME``): recall and precision against SNR with
+  bootstrap bands, and recall per call type at one SNR.
 * ``<set>_frequency_shift.png``: share found at +20 dB, each donor type as it is and shifted
   5 kHz (normal calls up, short high calls down).
 
 Usage:
     python tools/analysis/synth_figures.py analysis/synth_eval/v1 figures [--name synth_v1]
+    python tools/analysis/synth_figures.py analysis/synth_eval/v2test figures --compare v2
 """
 
 from __future__ import annotations
@@ -39,13 +43,13 @@ TYPE_NAMES = {"alarm_1": "alarm", "loud_shrill": "loud shrill", "phee_2": "phee 
               "phee_4": "phee (4 notes)", "tsik_ek": "tsik-ek"}
 
 
-def per_recording(folder: Path) -> List[Dict]:
+def per_recording(folder: Path, model: str = "production") -> List[Dict]:
     """Front-end, main matching, per recording: snr, calls, calls found, detections, detections right."""
     events: Dict[str, List[Dict]] = defaultdict(list)
     for e in csv.DictReader(open(folder / "events.tsv"), delimiter="\t"):
         events[e["rec_id"]].append(e)
     dets: Dict[str, List[Tuple[float, float]]] = defaultdict(list)
-    for p in sorted((folder / "detections").glob("*.tsv")):
+    for p in sorted((folder / ("detections" if model == "production" else f"detections_{model}")).glob("*.tsv")):
         for d in csv.DictReader(open(p), delimiter="\t"):
             if d["quality"] != "short_low_conf":
                 dets[d["rec_id"]].append((float(d["start_s"]), float(d["end_s"])))
@@ -209,13 +213,72 @@ def frequency_shift(folder: Path, path: Path, snr: str = "10.0") -> None:
     plt.close(fig)
 
 
+def compare_models(folder: Path, other: str, path: Path, snr: str = "2.0") -> None:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    names = (("production", "production (v1)", MUTED), (other, other, BLUE))
+    fig, (ax, bx) = plt.subplots(1, 2, figsize=(13, 5.2), dpi=150, gridspec_kw={"width_ratios": [1, 1.1]})
+    ends = []
+    for name, label, color in names:
+        b = bootstrap(per_recording(folder, name))
+        snrs = sorted(b)
+        x = [20 * np.log10(v) for v in snrs]
+        for key, ls in (("recall", "-"), ("precision", "--")):
+            y = [b[v][key][0] for v in snrs]
+            ax.fill_between(x, [b[v][key][1] for v in snrs], [b[v][key][2] for v in snrs], color=color, alpha=0.18, lw=0)
+            ax.plot(x, y, color=color, lw=2, ls=ls, marker="o", ms=4.5, mec="white", mew=1)
+            ends.append([y[-1], f"{label} {key}"])
+    ends.sort()
+    for k in range(1, len(ends)):                    # labels at least 0.045 apart, pushed upward
+        ends[k][0] = max(ends[k][0], ends[k - 1][0] + 0.045)
+    for yl, text in ends:
+        ax.text(x[-1] + 1.0, yl, text, va="center", fontsize=8.5, color=INK)
+    ax.set_xlim(min(x) - 1, max(x) + 13)
+    ax.set_ylim(0, 1.02)
+    ax.set_xticks(x, [_db(v) for v in x])
+    ax.set_xlabel("SNR (dB, 5-20 kHz, over the call)", color=INK2, fontsize=9.5)
+    _style(ax)
+    ax.set_title("All calls (front end, main matching; 95% bootstrap bands)", loc="left", fontsize=10, color=INK)
+    sc = {n: json.loads((folder / ("scores.json" if n == "production" else f"scores_{n}.json")).read_text())
+          ["views"]["front_end"]["by_type"] for n, _, _ in names}
+    types = sorted(sc["production"], key=lambda t: sc[other][t][snr]["recall_main"] - sc["production"][t][snr]["recall_main"])
+    for i, t in enumerate(types):
+        a, c = sc["production"][t][snr]["recall_main"], sc[other][t][snr]["recall_main"]
+        if abs(c - a) > 0.02:
+            bx.annotate("", xy=(c, i), xytext=(a, i), arrowprops=dict(arrowstyle="-|>", color=MUTED, lw=1.1,
+                                                                       shrinkA=5, shrinkB=5, mutation_scale=9))
+        bx.plot(a, i, "o", ms=8, color=MUTED, mec="white", mew=1.2, zorder=3)
+        bx.plot(c, i, "o", ms=8, color=BLUE, mec="white", mew=1.2, zorder=3)
+    bx.set_yticks(range(len(types)), [TYPE_NAMES.get(t, t) + (" *" if split_ok(t) else "") for t in types])
+    bx.set_xlim(-0.03, 1.03)
+    _style(bx)
+    bx.grid(axis="y", visible=False)
+    bx.set_xlabel(f"recall at {_db(20 * np.log10(float(snr)))} dB", color=INK2, fontsize=9.5)
+    bx.plot([], [], "o", color=MUTED, label="production (v1)")
+    bx.plot([], [], "o", color=BLUE, label=other)
+    bx.legend(frameon=False, fontsize=8.5, loc="lower right", bbox_to_anchor=(1.0, 1.0), ncol=2)
+    bx.set_title("By call type (* by overlap)", loc="left", fontsize=10, color=INK, pad=18)
+    n_rec = sum(1 for _ in open(folder / "recordings.tsv")) - 1
+    fig.suptitle(f"Detector retrained with synthetic and real short high calls, tested on held-out donors and backgrounds "
+                 f"({n_rec:,} recordings)", x=0.01, ha="left", fontsize=11, color=INK)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("folder", type=Path)
     ap.add_argument("out", type=Path)
     ap.add_argument("--name", default=None, help="file prefix (default synth_<folder name>)")
+    ap.add_argument("--compare", help="also draw production against this model's scores on the set")
     a = ap.parse_args()
     name = a.name or f"synth_{a.folder.name}"
+    if a.compare:
+        compare_models(a.folder, a.compare, a.out / f"{name}_models.png")
+        return
     ci = snr_curve(a.folder, a.out / f"{name}_snr_curve.png")
     (a.folder / "bootstrap.json").write_text(json.dumps(ci, indent=1))
     recall_by_type(a.folder, a.out / f"{name}_recall_by_type.png")
