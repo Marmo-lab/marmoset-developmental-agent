@@ -25,13 +25,22 @@ Steps:
   per recording, missed by the run first) cut to 2 s clips for the library's ``/short_high``
   page, where the user listens.
 
+* ``minutes RUN OUT``: training material for the learned detector (user, 2026-11-08). The 60
+  recordings are halved (``generate.half``: the train half gives minutes, the test half is
+  kept for evaluation). From each train recording, the ``MINUTES_PER_RECORDING`` minutes with
+  the most candidates missed by the run, as mono FLACs (the 4-capsule mean), with
+  ``positives.tsv``: every candidate and every run call in the minute, all calls (the user
+  heard the candidates as calls). The rest of the minute is not labelled: it may hold calls
+  nobody found, so training ignores it rather than calling it background.
+
 Writes under OUT: ``selftest.json``, ``scan/<recording_id>.tsv``, ``candidates.tsv``,
-``summary.json``, ``clips/<cand_id>.flac``.
+``summary.json``, ``clips/<cand_id>.flac``, ``minutes/<minute_id>.flac`` and ``minutes/positives.tsv``.
 
 Usage (on the cluster, via tools/cluster/short_high.sbatch):
     python tools/analysis/find_short_high.py selftest SET OUT
     python tools/analysis/find_short_high.py scan RUN OUT [--task-index I --n-tasks N]
     python tools/analysis/find_short_high.py select RUN OUT [--n 150]
+    python tools/analysis/find_short_high.py minutes RUN OUT
 """
 
 from __future__ import annotations
@@ -65,6 +74,7 @@ MARGIN_S = 1.0                                   # > MAX_DUR_S: a call at a bloc
 DAY_HOURS = range(7, 18)
 N_RECORDINGS = 60
 PER_RECORDING = 5
+MINUTES_PER_RECORDING = 5
 CLIP_S = 2.0
 FIELDS = ["cand_id", "recording_id", "start_s", "duration_s", "peak_hz", "high_db", "lead_db", "in_run_call"]
 
@@ -226,9 +236,52 @@ def select(run: Path, out: Path, n: int) -> Dict:
     return summary
 
 
+def recording_half(run: Path, which: str) -> List[Dict]:
+    """The scanned recordings of one half (``generate.half`` over their ids)."""
+    from tools.synth.generate import half
+    recs = pool(run)
+    keep = set(half([r["recording_id"] for r in recs], which))
+    return [r for r in recs if r["recording_id"] in keep]
+
+
+def minutes(run: Path, out: Path) -> int:
+    (out / "minutes").mkdir(parents=True, exist_ok=True)
+    pos = []
+    for rec in recording_half(run, "train"):
+        p = out / "scan" / f"{rec['recording_id']}.tsv"
+        cands = list(csv.DictReader(open(p), delimiter="\t")) if p.exists() else []
+        per_min: Dict[int, int] = defaultdict(int)
+        for c in cands:
+            if c["in_run_call"] == "0":
+                per_min[int(float(c["start_s"]) // 60)] += 1
+        top = sorted(per_min, key=lambda m: -per_min[m])[:MINUTES_PER_RECORDING]
+        calls = run_calls(run, rec["recording_id"])
+        with sf.SoundFile(rec["path"]) as f:
+            for m in sorted(top):
+                f.seek(m * 60 * SR)
+                x = f.read(60 * SR, dtype="float32", always_2d=True).mean(axis=1)
+                if len(x) < 60 * SR:
+                    continue
+                mid = f"{rec['recording_id']}_m{m:02d}"
+                sf.write(out / "minutes" / f"{mid}.flac", x, SR, subtype="PCM_24")
+                spans = [(float(c["start_s"]), float(c["start_s"]) + float(c["duration_s"]), "candidate") for c in cands]
+                spans += [(a, b, "run_call") for a, b in calls]
+                for a, b, src in spans:
+                    if _ov(a, b, m * 60, (m + 1) * 60):
+                        pos.append({"minute_id": mid, "start_s": round(max(0.0, a - m * 60), 3),
+                                    "end_s": round(min(60.0, b - m * 60), 3), "source": src})
+    with open(out / "minutes" / "positives.tsv", "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["minute_id", "start_s", "end_s", "source"], delimiter="\t")
+        w.writeheader()
+        w.writerows(pos)
+    n = len(list((out / "minutes").glob("*.flac")))
+    print(f"{n} minutes, {len(pos)} positive spans", flush=True)
+    return n
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("step", choices=["selftest", "scan", "select"])
+    ap.add_argument("step", choices=["selftest", "scan", "select", "minutes"])
     ap.add_argument("src", type=Path, help="a synthetic set (selftest) or a corpus run (scan, select)")
     ap.add_argument("out", type=Path)
     ap.add_argument("--task-index", type=int, default=int(os.environ.get("SLURM_ARRAY_TASK_ID", 0)))
@@ -239,8 +292,10 @@ def main() -> None:
         print(json.dumps(selftest(a.src, a.out), indent=1))
     elif a.step == "scan":
         scan(a.src, a.out, a.task_index, a.n_tasks)
-    else:
+    elif a.step == "select":
         print(json.dumps(select(a.src, a.out, a.n), indent=1))
+    else:
+        minutes(a.src, a.out)
 
 
 if __name__ == "__main__":

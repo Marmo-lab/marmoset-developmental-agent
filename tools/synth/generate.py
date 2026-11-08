@@ -28,6 +28,11 @@ the detector hears; ``backgrounds.py``), so generation never rereads the 4-chann
   at high SNR a quiet-in-band donor (alarm, twitter) carries a faint broadband box of its own
   noise.
 
+**Halves** [ours, with the user, 2026-11-08]: ``--half train|test`` builds a set from one half
+of the donors (per type) and one half of the backgrounds, ``half()``: each list sorted, shuffled
+with the fixed ``SPLIT_SEED``, the first half ``train``. A detector trained on the ``train`` half
+is tested on the ``test`` half, so no donor or background minute is heard in both.
+
 ``CALLS_PER_MIN`` [ours]: the mean over the hours 07:00-17:59 of the per-hour means over
 138 dates of the v4 run (``tools/analysis/calls_per_hour.py``; ``figures/``), 1,271 calls
 per recorded hour. It counts every detection, quality flags included.
@@ -200,6 +205,19 @@ def load_donors(folder: Path, clean: bool = False) -> Tuple[Dict[str, List[Dict]
     return by_type, audio
 
 
+SPLIT_SEED = 2026_11_08
+
+
+def half(items: Sequence[str], which: str) -> List[str]:
+    """``which`` half of ``items`` (``"all"``, ``"train"`` or ``"test"``), a fixed shuffle; train gets the extra one."""
+    if which == "all":
+        return list(items)
+    order = sorted(items)
+    np.random.default_rng(SPLIT_SEED).shuffle(order)
+    k = (len(order) + 1) // 2
+    return sorted(order[:k] if which == "train" else order[k:])
+
+
 def approved(backgrounds: Path) -> List[Dict]:
     """Candidates the user approved on the ``/backgrounds`` page (the last verdict per recording wins)."""
     cands = {c["recording_id"]: c for c in json.loads((backgrounds / "candidates.json").read_text())["candidates"]}
@@ -227,9 +245,13 @@ def extract(backgrounds: Path) -> None:
 
 
 def make(donors_dir: Path, backgrounds: Path, out: Path, n: int, levels: Sequence[float], seed: int,
-         clean: bool = False) -> None:
+         clean: bool = False, which: str = "all") -> None:
     donors, donor_audio = load_donors(donors_dir, clean)
-    bgs = sorted((backgrounds / "audio").glob("*.flac"))
+    for t, ds in donors.items():
+        keep = set(half([d["donor_id"] for d in ds], which))
+        donors[t] = [d for d in ds if d["donor_id"] in keep]
+    all_bgs = {p.stem: p for p in (backgrounds / "audio").glob("*.flac")}
+    bgs = [all_bgs[k] for k in half(list(all_bgs), which)]
     assert bgs, f"no extracted background in {backgrounds / 'audio'}"
     (out / "audio").mkdir(parents=True, exist_ok=True)
     recs, events = [], []
@@ -244,7 +266,7 @@ def make(donors_dir: Path, backgrounds: Path, out: Path, n: int, levels: Sequenc
             scale = 0.99 / peak if peak > 0.99 else 1.0      # a uniform scale leaves every SNR as it is
             sf.write(out / "audio" / f"{rec_id}.flac", (y * scale).astype(np.float32), SR, subtype="PCM_24")
             recs.append({"rec_id": rec_id, "snr": snr, "snr_db": round(20 * np.log10(snr), 2), "background": bg_path.stem,
-                         "background_kind": "night", "background_start_s": round(start / SR, 3), "n_calls": len(ev),
+                         "background_kind": "night", "half": which, "background_start_s": round(start / SR, 3), "n_calls": len(ev),
                          "scale": round(scale, 6), "seed": f"{seed},{li},{k}"})
             events += [asdict(e) | {"gain": round(e.gain * scale, 6)} for e in ev]
         print(f"SNR {snr:g}: {n} recordings", flush=True)
@@ -262,12 +284,14 @@ def main() -> None:
     ap.add_argument("--n", type=int, default=300)
     ap.add_argument("--snr", default=",".join(f"{s:g}" for s in SNR_LEVELS))
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--half", choices=["all", "train", "test"], default="all",
+                    help="build from one half of the donors and backgrounds (see Halves above)")
     ap.add_argument("--clean-donors", action="store_true", help="spectrally clean the donors (off by default)")
     a = ap.parse_args()
     if a.step == "extract":
         extract(a.paths[0])
     else:
-        make(*a.paths, n=a.n, levels=[float(s) for s in a.snr.split(",")], seed=a.seed, clean=a.clean_donors)
+        make(*a.paths, n=a.n, levels=[float(s) for s in a.snr.split(",")], seed=a.seed, clean=a.clean_donors, which=a.half)
 
 
 if __name__ == "__main__":

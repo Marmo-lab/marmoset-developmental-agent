@@ -129,3 +129,11 @@ def test_donors_are_raw_unless_cleaning_is_asked(tmp_path: Path) -> None:
     raw, cleaned = clip[SR // 2:SR], audio["phee_000"]
     assert len(cleaned) == len(raw)
     assert 20 * np.log10(g.rms(signal.sosfiltfilt(hi, raw)) / g.rms(signal.sosfiltfilt(hi, cleaned))) > 10
+
+
+def test_halves_are_disjoint_and_cover() -> None:
+    items = [f"d{k:02d}" for k in range(11)]
+    tr, te = g.half(items, "train"), g.half(items, "test")
+    assert len(tr) == 6 and len(te) == 5 and not set(tr) & set(te) and sorted(tr + te) == items
+    assert g.half(items, "train") == tr and g.half(list(reversed(items)), "train") == tr   # fixed, order-free
+    assert g.half(items, "all") == items

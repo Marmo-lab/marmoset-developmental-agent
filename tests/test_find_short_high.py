@@ -66,3 +66,35 @@ def test_library_serves_the_candidates(tmp_path) -> None:
         sh.audio("../candidates")
     sh.add_feedback({"cand_id": "r_0000", "verdict": "noise"})
     assert sh.feedback()["r_0000"]["verdict"] == "noise"
+
+
+def test_minutes_cut_the_train_half_with_positives(tmp_path) -> None:
+    import csv
+    import json
+
+    import soundfile as sf
+    run, out = tmp_path / "run", tmp_path / "out"
+    for d in ("files", "calls", "audio"):
+        (run / d).mkdir(parents=True)
+    (out / "scan").mkdir(parents=True)
+    rng = np.random.default_rng(3)
+    for k in range(4):
+        rid = f"rec{k}"
+        sf.write(run / "audio" / f"{rid}.wav", 0.01 * rng.standard_normal((3 * 60 * SR, 4)).astype(np.float32), SR)
+        (run / "files" / f"{rid}.json").write_text(json.dumps({"recording_id": rid, "path": str(run / "audio" / f"{rid}.wav"),
+                                                               "start_time": "2021-05-10T10:00:00", "duration_s": 3600}))
+        (run / "calls" / f"{rid}.csv").write_text("start_s,end_s\n70.0,71.0\n")
+        with open(out / "scan" / f"{rid}.tsv", "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=fsh.FIELDS, delimiter="\t")
+            w.writeheader()
+            w.writerow({"cand_id": f"{rid}_0000", "recording_id": rid, "start_s": 75.0, "duration_s": 0.1, "peak_hz": 15000,
+                        "high_db": 20, "lead_db": 10, "in_run_call": 0})
+    train = [r["recording_id"] for r in fsh.recording_half(run, "train")]
+    test = [r["recording_id"] for r in fsh.recording_half(run, "test")]
+    assert len(train) == 2 and not set(train) & set(test)
+    assert fsh.minutes(run, out) == 2
+    pos = list(csv.DictReader(open(out / "minutes" / "positives.tsv"), delimiter="\t"))
+    assert {p["minute_id"] for p in pos} == {f"{r}_m01" for r in train}
+    assert sorted((p["source"], p["start_s"], p["end_s"]) for p in pos if p["minute_id"] == f"{train[0]}_m01") == [
+        ("candidate", "15.0", "15.1"), ("run_call", "10.0", "11.0")]
+    assert sf.info(out / "minutes" / f"{train[0]}_m01.flac").duration == 60
