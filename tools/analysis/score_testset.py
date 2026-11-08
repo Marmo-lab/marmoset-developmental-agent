@@ -7,6 +7,10 @@ scoring code are exactly the frozen ones; this script only drives them:
     cd /tmp/frozen && PYTHONPATH=. python <repo>/tools/analysis/score_testset.py \\
         --root <repo> --out <repo>/outputs/testset_v1
 
+``--model NAME=PATH:SHA_PREFIX`` (repeatable) scores other frozen checkpoints from the current
+commit (TEST_PROTOCOL.md, addendum 2026-11-08: v2a, with v1 again for a same-code comparison).
+Without it, v1 alone, as in the first scoring.
+
 Detectors (all on the capsule mean, as in every earlier evaluation):
 
 * ``learned``: ``models/call_detector_v1.pt`` (sha256 prefix checked) with
@@ -144,12 +148,17 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", required=True, help="the working repo (labels, test audio)")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--model", action="append", default=[], help="NAME=PATH:SHA_PREFIX, a frozen checkpoint")
     a = ap.parse_args()
     root, out = Path(a.root), Path(a.out)
-    model = Path("models/call_detector_v1.pt")
-    sha = hashlib.sha256(model.read_bytes()).hexdigest()
-    if not sha.startswith(SHA_PREFIX):
-        raise SystemExit(f"model sha {sha[:16]} is not the frozen {SHA_PREFIX}")
+    models: Dict[str, Tuple[Path, str]] = {}
+    for spec in a.model or [f"learned=models/call_detector_v1.pt:{SHA_PREFIX}"]:
+        name, rest = spec.split("=", 1)
+        path, prefix = rest.rsplit(":", 1)
+        sha = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+        if not sha.startswith(prefix):
+            raise SystemExit(f"{name}: model sha {sha[:16]} is not the frozen {prefix}")
+        models[name] = (Path(path), sha)
     ids = [r["clip_id"] for r in csv.DictReader(open(root / "labeling/test/clips.csv"))]
     labels: Dict[str, List[Tuple[float, float, str]]] = {c: [] for c in ids}
     for r in csv.DictReader(open(root / "data/labels/test_labels.csv")):
@@ -157,16 +166,20 @@ def main() -> None:
     audio = root / "labeling/test/audio48"
 
     cfg_l = PreprocessingConfig.learned()
-    raw = {c: learned_detections(audio / f"{c}.npz", cfg_l, model) for c in ids}
-    dets = {"learned": {c: [(s, e) for s, e, _ in raw[c]] for c in ids},
-            "learned, no short_low_conf": {c: [(s, e) for s, e, p in raw[c] if not (e - s < SHORT_S and p < LOW_CONF)]
-                                           for c in ids},
-            "rule (reference)": {c: rule_detections(audio / f"{c}.npz", PreprocessingConfig()) for c in ids},
-            "talia": {c: rule_detections(audio / f"{c}.npz", PreprocessingConfig.talia()) for c in ids}}
+    dets: Dict[str, Dict[str, List[Interval]]] = {}
+    raws = {}
+    for name, (model, _) in models.items():
+        raw = {c: learned_detections(audio / f"{c}.npz", cfg_l, model) for c in ids}
+        raws[name] = raw
+        dets[name] = {c: [(s, e) for s, e, _ in raw[c]] for c in ids}
+        dets[f"{name}, no short_low_conf"] = {c: [(s, e) for s, e, p in raw[c] if not (e - s < SHORT_S and p < LOW_CONF)]
+                                             for c in ids}
+    dets["rule (reference)"] = {c: rule_detections(audio / f"{c}.npz", PreprocessingConfig()) for c in ids}
+    dets["talia"] = {c: rule_detections(audio / f"{c}.npz", PreprocessingConfig.talia()) for c in ids}
 
     keys = ("P", "R", "F1", "P_iou", "R_iou", "P_time", "R_time", "one_to_one", "edges_50ms")
     subsets = {"all 15": ids, "ts_07 only": ["ts_07"], "without ts_07": [c for c in ids if c != "ts_07"]}
-    results: Dict[str, object] = {"model_sha256": sha, "config_learned": dataclasses.asdict(cfg_l), "scores": {}}
+    results: Dict[str, object] = {"model_sha256": {n: v[1] for n, v in models.items()}, "config_learned": dataclasses.asdict(cfg_l), "scores": {}}
     for mode in ("c", "c+?"):
         for name, d in dets.items():
             pc = per_clip(d, labels, ids, mode)
@@ -189,10 +202,10 @@ def main() -> None:
 
     out.mkdir(parents=True, exist_ok=True)
     json.dump(results, open(out / "test_scores.json", "w"), indent=1)
-    json.dump({n: {c: [list(x) for x in v] for c, v in d.items()} for n, d in dets.items()} | {"learned_conf": raw},
+    json.dump({n: {c: [list(x) for x in v] for c, v in d.items()} for n, d in dets.items()} | {"learned_conf": raws},
               open(out / "test_detections.json", "w"), indent=1)
-    print(f"model {sha[:16]} · labels {results['counts']['labels']} · detections {results['counts']['detections']}")
-    hdr = f"{'':<38}" + "".join(f"{k:>11}" for k in keys) + f"{'on_ms':>7}{'off_ms':>7}{'<=30':>6}"
+    print(f"models {', '.join(f'{n} {v[1][:16]}' for n, v in models.items())} · labels {results['counts']['labels']} · detections {results['counts']['detections']}")
+    hdr = f"{'':<44}" + "".join(f"{k:>11}" for k in keys) + f"{'on_ms':>7}{'off_ms':>7}{'<=30':>6}"
     for mode in ("c", "c+?"):
         print(f"\n=== labels counted: {mode} (± = half the 95% bootstrap interval) ===\n{hdr}")
         for sub in subsets:
@@ -201,7 +214,7 @@ def main() -> None:
                 ci = m.get("ci95", {})
                 cells = "".join(f"{m[k]:6.2f}" + (f"±{(ci[k][1] - ci[k][0]) / 2:4.2f}" if k in ci else "     ")
                                 for k in keys)
-                print(f"{sub + ' · ' + name:<38}{cells}{m['onset_ms']:7.0f}{m['offset_ms']:7.0f}{m['edges_30ms']:6.2f}")
+                print(f"{sub + ' · ' + name:<44}{cells}{m['onset_ms']:7.0f}{m['offset_ms']:7.0f}{m['edges_30ms']:6.2f}")
     for what in ("recall_by_snr_db", "recall_by_duration_s"):
         print(f"\n{what}")
         for n, rows in results[what].items():

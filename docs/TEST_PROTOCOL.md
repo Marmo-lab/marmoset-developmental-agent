@@ -67,3 +67,20 @@ views (all detections; without `short_low_conf`), the three subsets, bootstrap i
 **Rules.** Score once. Report everything. No model, threshold or setting changes in response; the result decides
 only whether v2a is confirmed or the decision returns to the user. After this the test set is spent for model choice
 between v1 and v2a; any later model needs new untouched clips.
+
+**Result (scored once, 2026-11-08; `analysis/detector_v2/testset/`).** `c` labels, all 15 clips, ± half the 95%
+bootstrap interval over clips:
+
+| | P | R | F1 | R@IoU.5 | time R | one-to-one | edges ≤ 50 ms | onset / offset |
+|---|---|---|---|---|---|---|---|---|
+| v1 | 0.94±0.04 | 0.93±0.05 | 0.93±0.02 | 0.77±0.10 | 0.80±0.08 | 0.76 | 0.43 | 14 / 53 ms |
+| v2a | 0.91±0.08 | 0.94±0.04 | 0.92±0.04 | 0.82±0.08 | 0.87±0.05 | 0.78 | 0.47 | 17 / 48 ms |
+
+- v1 reproduces its first scoring exactly, so the code path is unchanged.
+- **v2a is confirmed**: no score is worse beyond the intervals; recall at IoU 0.5 (+5 points) and time recall (+7)
+  are better, precision 3 points lower (295 detections against 279).
+- The test set holds **no label shorter than 0.18 s**, so it cannot speak to the short high calls v2a was retrained
+  for. Some of v2a's 16 extra detections may be such calls, unlabelled; that was not checked (no listening, by the
+  rules above).
+- Divergence: under the current default configuration the `rule (reference)` row runs the learned v1 (the default
+  detector changed after the frozen commit), so it duplicates v1 and is not a rule-detector result.

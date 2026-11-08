@@ -164,5 +164,6 @@ v2a (`models/call_detector_v2a.pt`, sha256 `bbf29f92945877d3...`) is the detecto
 further variant chosen on the same 45 clips and synthetic set makes those tests less honest. Known limitation, on
 record: v2a still misses about 39% of the short high calls v4 missed, so the corpus under-represents tsik and seep;
 on the strict IoU test its short-call boundaries are weak (alarm 0.44, tsik-ek 0.43 at +6 dB) though it touches
-91-95% of them. Confirmed once on the blind test set (`docs/TEST_PROTOCOL.md`, addendum 2026-11-08) before the
-corpus is rerun. Production (`learned_model_path`) still points at v1 until the user switches it.
+91-95% of them. Confirmed once on the blind test set (`docs/TEST_PROTOCOL.md`, addendum 2026-11-08): against v1,
+P 0.91 vs 0.94, R 0.94 vs 0.93, F1 0.92 vs 0.93, R@IoU.5 0.82 vs 0.77, time recall 0.87 vs 0.80; nothing worse
+beyond the bootstrap intervals. The test set has no label under 0.18 s. Production (`learned_model_path`) still points at v1 until the user switches it.
