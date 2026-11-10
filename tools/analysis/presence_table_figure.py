@@ -23,7 +23,9 @@ ROWS = [("Real colony, blind test: 15 minutes, hand labels", None),
         ("Real colony, cross-validated: 45 minutes, hand labels", None),
         ("Call presence, 10 s", f"{CV} | 10 s"), ("Call presence, 1 s", f"{CV} | 1 s"),
         ("Synthetic, held-out half: 300 minutes at SNR 1.5, planted calls in night background", None),
-        ("Call presence, 1 s", "synthetic, +3.52 dB | 1 s")]
+        ("Call presence, 1 s", "synthetic, +3.52 dB | 1 s"),
+        ("Synthetic + real colony noises: the same 300 minutes, ~7 noises a minute", None),
+        ("Call presence, 1 s", "synthetic + noise, +3.52 dB | 1 s")]
 HEAD, SECTION = "#c9dcee", "white"
 
 
@@ -34,6 +36,8 @@ def main() -> None:
              "Machine vs.\nreference", "Human-\nHuman"]]
     kinds = ["head", "head"]
     for name, key in ROWS:
+        if key is not None and key not in r:
+            continue
         if key is None:
             rows.append([name] + [""] * 6)
             kinds.append("section")
@@ -63,7 +67,8 @@ def main() -> None:
                "or the planted calls (synthetic: unseen donor calls planted into unseen call-free night background, SNR 1.5 = +3.5 dB).\n"
                "A segment is positive when a call or a detection overlaps it. Blind test: frozen model, scored once; cross-validated:\n"
                "each minute scored by a model that never trained on it. Precision lift = precision / prevalence of positive segments.\n"
-               "Pooled over minutes. Human-human kappa not yet measured (needs a second rater). No noise events are planted yet.")
+               "Noises: cage, people and doors heard in the colony, planted at their recorded level. Pooled over minutes.\n"
+               "Human-human kappa not yet measured (needs a second rater).")
     fig.text(0.04, 0.02, caption, fontsize=9.5, style="italic", va="bottom")
     out = Path("figures/presence_table_v2a.png")
     fig.savefig(out, dpi=150, bbox_inches="tight")

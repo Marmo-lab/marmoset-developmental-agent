@@ -167,3 +167,18 @@ on the strict IoU test its short-call boundaries are weak (alarm 0.44, tsik-ek 0
 91-95% of them. Confirmed once on the blind test set (`docs/TEST_PROTOCOL.md`, addendum 2026-11-08): against v1,
 P 0.91 vs 0.94, R 0.94 vs 0.93, F1 0.92 vs 0.93, R@IoU.5 0.82 vs 0.77, time recall 0.87 vs 0.80; nothing worse
 beyond the bootstrap intervals. The test set has no label under 0.18 s. Production (`learned_model_path`) still points at v1 until the user switches it.
+
+### Planted colony noise (2026-11-10)
+SYNTH_EVAL step 3, redesigned with the user: real colony noises added to make the synthetic minutes more like the
+colony, not a paired robustness test. `tools/analysis/find_noise_events.py` (80 v5 recordings, 81 h) found 462 loud
+non-call events per hour; the user named 105 of a varied sample: cage 65, call 24 (missed by v2a), discard 8,
+human 4, door 2, beep 1. `tools/synth/plant_noise.py` cut the 37 held-out-half noises (cage 33, human 3, door 1;
+no beep, so beeps are not planted) and added them to the 300 v2test minutes at SNR 1.5: type by the heard shares,
+recorded level, Poisson 7 a minute (estimated ~5 a minute over day and night, ~9 by day), placed anywhere in the
+minute, 0.5 s apart from each other. `analysis/synth_eval/v2test_noise/`: 2,106 noises (cage 1,921, human 126,
+door 59), 1,441 of them on a call.
+
+v2a, front-end view, same 300 minutes without -> with noise: any-overlap recall 0.918 -> 0.869, main recall
+0.741 -> 0.718, precision 0.995 -> 0.996, false alarms 4.8 -> 4.2 per hour. Per 1 s segment: P 0.98 -> 0.99,
+R 0.96 -> 0.92, F1 0.97 -> 0.95, kappa 0.86 -> 0.79. Of the 665 noises clear of every call, a detection fired on
+7% of the cage noises and none of the people or doors. So the noises cost recall (calls masked), not precision.
