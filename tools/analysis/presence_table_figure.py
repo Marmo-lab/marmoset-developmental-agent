@@ -23,7 +23,7 @@ ROWS = [("Real colony, blind test: 15 minutes, hand labels", None),
         ("Real colony, cross-validated: 45 minutes, hand labels", None),
         ("Call presence, 10 s", f"{CV} | 10 s"), ("Call presence, 1 s", f"{CV} | 1 s"),
         ("Synthetic, held-out half: 300 minutes at SNR 1.5, planted calls in night background", None),
-        ("SNR 1.5 (amplitude ratio, +3.5 dB), 1 s", "synthetic, +3.52 dB | 1 s")]
+        ("Call presence, 1 s", "synthetic, +3.52 dB | 1 s")]
 HEAD, SECTION = "#c9dcee", "white"
 
 
@@ -43,13 +43,13 @@ def main() -> None:
         rows.append([f"   {name}", f"{x['precision']:.2f}", f"{x['recall']:.2f}", f"{x['f1']:.2f}", f"{x['lift']:.1f}",
                      f"{x['kappa']:.2f}", hh])
         kinds.append("row")
-    fig, ax = plt.subplots(figsize=(12, 8.2))
+    fig, ax = plt.subplots(figsize=(12, 5.6))
     ax.axis("off")
     t = ax.table(cellText=rows, loc="upper center", cellLoc="left", colWidths=[0.34] + [0.11] * 6)
     t.auto_set_font_size(False)
     t.set_fontsize(10.5)
     for (i, j), c in t.get_celld().items():
-        c.set_height(0.075 if kinds[i] == "head" else 0.052)
+        c.set_height(0.105 if kinds[i] == "head" else 0.075)
         if kinds[i] == "head":
             c.set_facecolor(HEAD)
             c.get_text().set_fontweight("bold")
