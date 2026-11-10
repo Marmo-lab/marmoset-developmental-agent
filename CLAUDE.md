@@ -37,8 +37,16 @@ There is no build step. **Verify before handing over:** run pytest and ruff on e
 5. **Chronology.** Never shuffle across days; only the sleep-replay portion of a day is shuffled.
 6. **Provenance.** Every constant or formula cites its source (`[paper]` / `[talia]` / `[ours]`, a paper section or a `references/` file), and divergences are stated.
 
+## Workflow: Two-Track Gatekeeper (user rule, 2026-11-10)
+Classify every change before touching a file. If it is ambiguous, it is Track 1.
+1. **Track 1: core research.** This covers preprocessing, detector and models, pipelines, cleaning and resynthesis: `marmoset_developmental_agent/`, the processing stages in `tools/corpus/`, and the detector training.
+   - Do not change files first. Outline the logic, the math and the biological reasoning in chat (STFT sizes, thresholds, tensor operations), and wait for the user's approval of the concept.
+   - Then stage the code, uncommitted, so the user can read it line by line in the app's diff viewer. Commit only after they accept it.
+   - In core code, inline comments over-explain the *why* of every step. This overrides "minimal inline comments" below.
+2. **Track 2: analysis, plots, glue.** This covers reports, figures, viewers, sbatch wrappers and one-off tools. Write, run and commit quickly; what matters is correct output.
+
 ## Conventions
 - Paper vs. code: a small gap means the code wins, a large gap means the paper wins, and a paper typo means the code wins. Details in `docs/CONVENTIONS.md`.
 - Durations are stored in seconds and converted with `to_frames()`.
-- Match the surrounding code: dense docstrings explaining *why* and citing sources, minimal inline comments.
+- Match the surrounding code: dense docstrings explaining *why* and citing sources. Inline comments are minimal in Track 2 code and explanatory in Track 1 code (see Workflow).
 - Git: work on `main` and push to `origin`. **Commit messages carry no Claude co-author or session trailers.**
