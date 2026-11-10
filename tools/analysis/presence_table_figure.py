@@ -22,11 +22,8 @@ ROWS = [("Real colony, blind test: 15 minutes, hand labels", None),
         ("Call presence, 1 min", f"{BT} | 60 s"), ("Call presence, 10 s", f"{BT} | 10 s"), ("Call presence, 1 s", f"{BT} | 1 s"),
         ("Real colony, cross-validated: 45 minutes, hand labels", None),
         ("Call presence, 10 s", f"{CV} | 10 s"), ("Call presence, 1 s", f"{CV} | 1 s"),
-        ("Synthetic, held-out half: 1,800 minutes, planted calls in night background", None),
-        ("All SNRs, 1 s", "synthetic, all SNRs | 1 s")] + [
-        (f"SNR {lab}, 1 s", f"synthetic, {key} | 1 s") for lab, key in
-        [("+20 dB", "+20 dB"), ("+10 dB", "+10.1 dB"), ("+6 dB", "+6.02 dB"), ("+3.5 dB", "+3.52 dB"),
-         ("0 dB", "+0 dB"), ("−3 dB", "-3.1 dB")]]
+        ("Synthetic, held-out half: 300 minutes at SNR 1.5, planted calls in night background", None),
+        ("SNR 1.5 (amplitude ratio, +3.5 dB), 1 s", "synthetic, +3.52 dB | 1 s")]
 HEAD, SECTION = "#c9dcee", "white"
 
 
@@ -63,7 +60,7 @@ def main() -> None:
             if j == 0:
                 c.get_text().set_clip_on(False)
     caption = ("Call presence of detector v2a, per segment of one-minute recordings. Reference: the user's hand labels (real colony)\n"
-               "or the planted calls (synthetic: unseen donor calls planted into unseen call-free night background at six SNRs).\n"
+               "or the planted calls (synthetic: unseen donor calls planted into unseen call-free night background, SNR 1.5 = +3.5 dB).\n"
                "A segment is positive when a call or a detection overlaps it. Blind test: frozen model, scored once; cross-validated:\n"
                "each minute scored by a model that never trained on it. Precision lift = precision / prevalence of positive segments.\n"
                "Pooled over minutes. Human-human kappa not yet measured (needs a second rater). No noise events are planted yet.")
