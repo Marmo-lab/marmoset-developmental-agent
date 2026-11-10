@@ -47,7 +47,7 @@ def main() -> None:
         rows.append([f"   {name}", f"{x['precision']:.2f}", f"{x['recall']:.2f}", f"{x['f1']:.2f}", f"{x['lift']:.1f}",
                      f"{x['kappa']:.2f}", hh])
         kinds.append("row")
-    fig, ax = plt.subplots(figsize=(12, 5.6))
+    fig, ax = plt.subplots(figsize=(12, 6.8))
     ax.axis("off")
     t = ax.table(cellText=rows, loc="upper center", cellLoc="left", colWidths=[0.34] + [0.11] * 6)
     t.auto_set_font_size(False)
@@ -69,7 +69,7 @@ def main() -> None:
                "each minute scored by a model that never trained on it. Precision lift = precision / prevalence of positive segments.\n"
                "Noises: cage, people and doors heard in the colony, planted at their recorded level. Pooled over minutes.\n"
                "Human-human kappa not yet measured (needs a second rater).")
-    fig.text(0.04, 0.02, caption, fontsize=9.5, style="italic", va="bottom")
+    fig.text(0.04, -0.06, caption, fontsize=9.5, style="italic", va="bottom")
     out = Path("figures/presence_table_v2a.png")
     fig.savefig(out, dpi=150, bbox_inches="tight")
     print(out)
