@@ -12,6 +12,11 @@ cross-validated out-of-fold on the 45 calibration + held-out minutes (``analysis
 frozen v2a on the 15 blind test minutes (``outputs/testset_v2a/test_detections.json``, the single scoring of
 2026-11-08; nothing is re-run or tuned here). Intervals: 95% bootstrap over minutes. [ours]
 
+Synthetic rows: the held-out (test) half of the synthetic set (``analysis/synth_eval/v2test``: 1,800 one-minute
+recordings, unseen donors planted into unseen night backgrounds at six SNRs, docs/SYNTH_EVAL.md), where the answer
+is exact (the planted calls), scored the same way at 10 s and 1 s, overall and per SNR. No noise events are
+planted in this set yet (SYNTH_EVAL step 3). [ours]
+
 Usage:
     python tools/analysis/presence_table.py [--out analysis/presence_table]
 """
@@ -99,6 +104,20 @@ def main() -> None:
     for name, dets in sets.items():
         for seg in SEG_S:
             pc = {c: np.array(segments(lab.get(c, []), dets[c], seg), dtype=int).reshape(-1, 2) for c in dets}
+            res[f"{name} | {seg:g} s"] = table(pc)
+    syn = Path("analysis/synth_eval/v2test")
+    snr = {r["rec_id"]: float(r["snr_db"]) for r in csv.DictReader(open(syn / "recordings.tsv"), delimiter="\t")}
+    syn_lab: Dict[str, List[Tuple[float, float, str]]] = {k: [] for k in snr}
+    for r in csv.DictReader(open(syn / "events.tsv"), delimiter="\t"):
+        syn_lab[r["rec_id"]].append((float(r["onset_s"]), float(r["offset_s"]), "c"))
+    syn_det: Dict[str, List[Span]] = {k: [] for k in snr}
+    for r in csv.DictReader(open(syn / "detections_v2a" / "all.tsv"), delimiter="\t"):
+        syn_det[r["rec_id"]].append((float(r["start_s"]), float(r["end_s"])))
+    groups = {"synthetic, all SNRs": sorted(snr)} | {f"synthetic, {db:+g} dB": [k for k in snr if snr[k] == db]
+                                                    for db in sorted(set(snr.values()), reverse=True)}
+    for name, ids in groups.items():
+        for seg in SEG_S[1:]:
+            pc = {c: np.array(segments(syn_lab[c], syn_det[c], seg), dtype=int).reshape(-1, 2) for c in ids}
             res[f"{name} | {seg:g} s"] = table(pc)
     a.out.mkdir(parents=True, exist_ok=True)
     (a.out / "presence_table.json").write_text(json.dumps(res, indent=1))
