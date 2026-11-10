@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>הקלטות גולמיות</title>
+<style>
+/* Layout: header (folder, totals); activity overview of the whole folder (click to jump); controls; the window's
+   spectrogram (click to play from there) with a playhead; the file list by day. */
+:root{
+  --bg:#f3f5f4; --card:#ffffff; --ink:#1d282c; --muted:#5d6b70; --rule:#d9e0de; --accent:#0b7a75; --accent-soft:#e1f0ee;
+  --night:#e6e9ee; --line:#0b7a75; --line2:#c2410c; --mark:#d1004b;
+  --font:"Assistant","Arial Hebrew",Arial,sans-serif; --mono:ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#121819;--card:#1a2224;--ink:#e2eae8;--muted:#9aaeb0;--rule:#2b3739;--accent:#4fc1b8;--accent-soft:#163030;
+        --night:#20282e;--line:#4fc1b8;--line2:#f59e5b;--mark:#ff5c93;color-scheme:dark}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.5}
+header{background:var(--card);border-bottom:1px solid var(--rule);padding:10px max(16px,2vw);display:flex;flex-direction:column;gap:4px}
+h1{margin:0;font-size:1.25rem}
+.sum{color:var(--muted);font-size:.9rem;max-width:80rem}
+main{padding:14px max(16px,2vw);display:flex;flex-direction:column;gap:12px;max-width:1500px;margin:0 auto}
+section{background:var(--card);border:1px solid var(--rule);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+h2{margin:0;font-size:1rem}
+.hint{font-size:.82rem;color:var(--muted)}
+#ov{width:100%;height:120px;display:block;cursor:pointer;direction:ltr}
+.controls{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;font-size:.88rem}
+.controls label{display:flex;gap:5px;align-items:center;color:var(--muted)}
+select,input{font:inherit;font-size:.85rem;padding:2px 6px;border:1px solid var(--rule);border-radius:5px;background:var(--bg);color:var(--ink)}
+button{font:inherit;cursor:pointer;border:1px solid var(--rule);background:var(--bg);color:var(--ink);border-radius:5px;padding:3px 10px;font-size:.85rem}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.now{font-variant-numeric:tabular-nums;font-weight:600;direction:ltr;unicode-bidi:isolate}
+.spec{position:relative;cursor:crosshair;direction:ltr}
+.spec img{width:100%;display:block;border-radius:4px;background:#000;min-height:120px}
+.spec .head{position:absolute;width:2px;background:#4fc1b8;pointer-events:none;display:none}
+.spec .busy{position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:#fff;background:#0006;font-size:.9rem;border-radius:4px}
+.days{display:flex;flex-direction:column;gap:6px}
+.day{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.day b{min-width:7.5rem;font-size:.85rem}
+.day button{font-size:.75rem;padding:1px 6px;font-variant-numeric:tabular-nums}
+.day button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+code{font-family:var(--mono);font-size:.8em;direction:ltr;unicode-bidi:isolate}
+.err{color:var(--mark);font-size:.85rem}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">הקלטות גולמיות</h1>
+  <div class="sum" id="sum">טוען…</div>
+</header>
+<main>
+  <section id="ovsec" hidden>
+    <h2>פעילות לאורך כל ההקלטה</h2>
+    <canvas id="ov" aria-label="רמת האנרגיה בתחום הקריאות לאורך כל ההקלטה; לחיצה קופצת לאותו רגע"></canvas>
+    <div class="hint"><span style="color:var(--line)">■</span> 5–12 kHz (phee, trill, twitter) ·
+      <span style="color:var(--line2)">■</span> 12–24 kHz (קריאות קצרות וגבוהות) · רקע אפור = 19:00–06:30 ·
+      כל נקודה = 10 שניות. <b>לחיצה קופצת לאותו רגע.</b> הקו האדום = החלון המוצג.</div>
+  </section>
+  <section>
+    <div class="controls">
+      <span class="now" id="now">—</span>
+      <button type="button" id="prev" title="חלון קודם (חץ שמאלה)">← קודם</button>
+      <button type="button" id="next" title="חלון הבא (חץ ימינה)">הבא →</button>
+      <label>קפוץ לשעה <input type="datetime-local" id="jump" step="1"></label>
+      <label>אורך חלון <select id="dur"><option>10</option><option selected>30</option><option>60</option></select> ש׳</label>
+      <label>ערוץ <select id="ch"><option value="mean">ממוצע 4 המיקרופונים</option><option value="1">מיקרופון 1</option>
+        <option value="2">מיקרופון 2</option><option value="3">מיקרופון 3</option><option value="4">מיקרופון 4</option></select></label>
+      <label>תדר עליון <select id="fmax"><option value="24">24 kHz</option><option value="48">48 kHz (כולל אולטרסאונד)</option></select></label>
+    </div>
+    <div class="spec" id="spec"><img id="img" alt="ספקטרוגרמה של החלון"><div class="head" id="head"></div><div class="busy" id="busy">טוען…</div></div>
+    <div class="controls">
+      <button type="button" class="primary" id="p1">▶ מהירות רגילה</button>
+      <button type="button" id="p05">▶ חצי מהירות</button>
+      <button type="button" id="stop">■ עצור</button>
+      <span class="hint">לחיצה על הספקטרוגרמה מנגנת מאותה נקודה. מקשים: רווח = נגן/עצור, חיצים = חלון קודם/הבא.
+        חצי מהירות מוריד גם את הגובה באוקטבה, ואז קריאות גבוהות נשמעות טוב יותר.</span>
+      <span class="err" id="err"></span>
+    </div>
+  </section>
+  <section>
+    <h2>קבצים</h2>
+    <div class="days" id="days"></div>
+  </section>
+</main>
+<script>
+const T = new URLSearchParams(location.search).get("t") || "";
+const api = (p, q = {}) => `${p}?${new URLSearchParams({...q, t: T})}`;
+const $ = id => document.getElementById(id);
+const DAYS = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ש׳"];
+let D = null, files = [], cur = {i: 0, off: 0}, player = null, raf = 0, axes = [0.035, 0.11, 0.955, 0.86];
+
+// Wall times are the recorder's clock, kept as naive local times: parse "YYYY-MM-DDTHH:MM:SS" as local.
+const ms = s => new Date(s).getTime();
+const pad = n => String(n).padStart(2, "0");
+const fmt = t => { const d = new Date(t); return `${DAYS[d.getDay()]} ${pad(d.getDate())}.${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
+const local = t => { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
+const dur = () => +$("dur").value;
+const wallOf = () => files[cur.i].t0 + cur.off * 1000;
+const night = h => h >= 19 || h < 6.5;
+
+function locate(t){                       // wall ms -> {i, off}; between files, the next file's start
+  for (let i = 0; i < files.length; i++){
+    const f = files[i];
+    if (t < f.t0) return {i, off: 0};
+    if (t < f.t0 + f.duration_s * 1000) return {i, off: (t - f.t0) / 1000};
+  }
+  const i = files.length - 1;
+  return {i, off: Math.max(0, files[i].duration_s - dur())};
+}
+function clampOff(){
+  const f = files[cur.i];
+  cur.off = Math.max(0, Math.min(cur.off, Math.max(0, f.duration_s - 1)));
+}
+function q(extra = {}){
+  const f = files[cur.i];
+  return {start: cur.off.toFixed(2), dur: Math.min(dur(), f.duration_s - cur.off).toFixed(2), ch: $("ch").value, ...extra};
+}
+function show(){
+  stop();
+  clampOff();
+  const f = files[cur.i];
+  $("now").textContent = `${fmt(wallOf())}  ·  ${f.file}  +${Math.floor(cur.off / 60)}:${pad(Math.floor(cur.off % 60))}`;
+  $("jump").value = local(wallOf());
+  $("busy").style.display = "flex"; $("err").textContent = "";
+  $("img").src = api(`api/raw_spec/${f.file}`, q({fmax: $("fmax").value}));
+  location.hash = `${f.file}@${cur.off.toFixed(1)}`;
+  document.querySelectorAll(".day button").forEach(b => b.classList.toggle("on", +b.dataset.i === cur.i));
+  drawOverview();
+}
+function step(sign){
+  const f = files[cur.i];
+  let off = cur.off + sign * dur();
+  if (off >= f.duration_s && cur.i < files.length - 1){ cur = {i: cur.i + 1, off: 0}; }
+  else if (off < 0 && cur.i > 0){ cur = {i: cur.i - 1, off: Math.max(0, files[cur.i - 1].duration_s - dur())}; }
+  else cur.off = Math.max(0, Math.min(off, f.duration_s - 1));
+  show();
+}
+function stop(){
+  if (player){ player.pause(); player = null; }
+  cancelAnimationFrame(raf); $("head").style.display = "none";
+}
+function play(rate, from = 0){
+  stop();
+  const f = files[cur.i], len = Math.min(dur(), f.duration_s - cur.off);
+  from = Math.max(0, Math.min(from, len - 0.2));
+  player = new Audio(api(`api/raw_audio/${f.file}`, q({start: (cur.off + from).toFixed(2), dur: (len - from).toFixed(2)})));
+  player.preservesPitch = false; player.mozPreservesPitch = false; player.webkitPreservesPitch = false;
+  player.playbackRate = rate;
+  player.onerror = () => { $("err").textContent = "השמע לא נטען: בדוק שהשרת עדיין רץ"; };
+  const p = player;
+  player.play();
+  const img = $("img"), head = $("head");
+  const tick = () => {
+    if (p !== player) return;
+    const x = (from + p.currentTime) / len;
+    const w = img.clientWidth, h = img.clientHeight;
+    head.style.left = `${(axes[0] + axes[2] * Math.min(1, x)) * w}px`;
+    head.style.top = `${(1 - axes[1] - axes[3]) * h}px`; head.style.height = `${axes[3] * h}px`;
+    head.style.display = "block";
+    if (!p.ended) raf = requestAnimationFrame(tick); else head.style.display = "none";
+  };
+  raf = requestAnimationFrame(tick);
+}
+
+function drawOverview(){
+  const ov = D.overview;
+  if (!ov.length) return;
+  const c = $("ov"), dpr = devicePixelRatio || 1, W = c.clientWidth, H = c.clientHeight;
+  c.width = W * dpr; c.height = H * dpr;
+  const g = c.getContext("2d"); g.scale(dpr, dpr);
+  const css = getComputedStyle(document.documentElement), v = k => css.getPropertyValue(k).trim();
+  const t0 = ms(ov[0][0]), t1 = ms(ov[ov.length - 1][0]) + 10000, X = t => (t - t0) / (t1 - t0) * W;
+  const lo = Math.min(...ov.map(r => Math.min(r[1], r[2]))), hi = Math.max(...ov.map(r => Math.max(r[1], r[2])));
+  const Y = y => H - 14 - (y - lo) / (hi - lo) * (H - 20);
+  g.fillStyle = v("--night");                                      // night bands, hour by hour
+  for (let t = Math.floor(t0 / 3600000) * 3600000; t < t1; t += 1800000){
+    const h = new Date(t).getHours() + new Date(t).getMinutes() / 60;
+    if (night(h)) g.fillRect(X(t), 0, X(t + 1800000) - X(t) + 1, H - 14);
+  }
+  g.fillStyle = v("--muted"); g.font = "10px sans-serif"; g.textAlign = "center";
+  for (let t = Math.ceil(t0 / 21600000) * 21600000; t < t1; t += 21600000){
+    const d = new Date(t);
+    g.fillText(d.getHours() === 0 ? `${pad(d.getDate())}.${pad(d.getMonth() + 1)}` : `${pad(d.getHours())}:00`, X(t), H - 2);
+  }
+  for (const [k, col] of [[2, "--line2"], [1, "--line"]]){
+    g.strokeStyle = v(col); g.lineWidth = 1; g.beginPath();
+    ov.forEach((r, j) => { const x = X(ms(r[0])), y = Y(r[k]); j ? g.lineTo(x, y) : g.moveTo(x, y); });
+    g.stroke();
+  }
+  if (files.length){
+    const a = X(wallOf()), b = X(wallOf() + dur() * 1000);
+    g.fillStyle = v("--mark"); g.fillRect(a - 1, 0, Math.max(2, b - a), H - 14);
+  }
+  c.onclick = e => {
+    const r = c.getBoundingClientRect();
+    cur = locate(t0 + (e.clientX - r.left) / W * (t1 - t0) - dur() * 500);
+    show();
+  };
+}
+
+function buildDays(){
+  const by = {};
+  files.forEach((f, i) => { const d = new Date(f.t0); const k = `${DAYS[d.getDay()]} ${pad(d.getDate())}.${pad(d.getMonth() + 1)}`; (by[k] = by[k] || []).push(i); });
+  $("days").innerHTML = Object.entries(by).map(([k, is]) => `<div class="day"><b>יום ${k}</b>${is.map(i => {
+    const d = new Date(files[i].t0);
+    return `<button type="button" data-i="${i}" title="${files[i].file}, ${(files[i].duration_s / 60).toFixed(1)} דק׳">${pad(d.getHours())}:${pad(d.getMinutes())}</button>`;
+  }).join("")}</div>`).join("");
+  document.querySelectorAll(".day button").forEach(b => b.onclick = () => { cur = {i: +b.dataset.i, off: 0}; show(); });
+}
+
+fetch(api("api/raw")).then(r => r.json()).then(d => {
+  D = d; axes = d.axes;
+  files = d.files.map(f => ({...f, t0: ms(f.start)}));
+  const hours = files.reduce((s, f) => s + f.duration_s, 0) / 3600;
+  $("title").textContent = `הקלטות גולמיות: ${d.folder}`;
+  document.title = `הקלטות גולמיות ${d.folder}`;
+  $("sum").innerHTML = `${files.length} קבצים · <b>${hours.toFixed(1)} שעות</b> · מ־<b>${fmt(files[0].t0)}</b> עד <b>${fmt(files[files.length - 1].t0 + files[files.length - 1].duration_s * 1000)}</b> (שעון המקליט) · ${files[0].sr / 1000} kHz, ${files[0].channels} ערוצים. ` +
+    `הספקטרוגרמה מציגה כל תדר ביחס לרמה הרגילה שלו בחלון: רעש קבוע נעלם לשחור, וכל אירוע חולף (קריאה, רעש) בולט.`;
+  $("ovsec").hidden = !d.overview.length;
+  buildDays();
+  const [hf, ho] = decodeURIComponent(location.hash.slice(1)).split("@");
+  const hi = files.findIndex(f => f.file === hf);
+  cur = hi >= 0 ? {i: hi, off: +ho || 0} : {i: 0, off: 0};
+  show();
+}).catch(() => { $("sum").innerHTML = `אין גישה. פתח את הכתובת שהשרת הדפיס, עם <code>?t=…</code>, ובדוק שהשרת הופעל עם <code>--raw</code>.`; });
+
+$("img").onload = () => { $("busy").style.display = "none"; };
+$("img").onerror = () => { $("busy").style.display = "none"; $("err").textContent = "הספקטרוגרמה לא נטענה: בדוק שהשרת עדיין רץ"; };
+$("prev").onclick = () => step(-1);
+$("next").onclick = () => step(1);
+$("p1").onclick = () => play(1);
+$("p05").onclick = () => play(0.5);
+$("stop").onclick = stop;
+["dur", "ch", "fmax"].forEach(id => $(id).onchange = show);
+$("jump").onchange = () => { const t = ms($("jump").value); if (!isNaN(t)){ cur = locate(t); show(); } };
+$("spec").onclick = e => {
+  const r = $("img").getBoundingClientRect();
+  const x = ((e.clientX - r.left) / r.width - axes[0]) / axes[2];
+  if (x >= 0 && x <= 1) play(1, x * Math.min(dur(), files[cur.i].duration_s - cur.off));
+};
+addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (e.key === "ArrowRight"){ step(1); e.preventDefault(); }
+  else if (e.key === "ArrowLeft"){ step(-1); e.preventDefault(); }
+  else if (e.key === " "){ player ? stop() : play(1); e.preventDefault(); }
+});
+addEventListener("resize", () => D && drawOverview());
+</script>
+</body>
+</html>

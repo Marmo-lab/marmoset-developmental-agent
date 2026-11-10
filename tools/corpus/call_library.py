@@ -22,6 +22,12 @@ with verdicts in ``DIR/bg_feedback.jsonl``.
 clip around each, its spectrogram, played at normal and half speed), with verdicts in
 ``DIR/short_high_feedback.jsonl``.
 
+``--raw DIR`` adds ``/raw``: a raw recording folder (e.g. a newly copied ``Rec_*``), any window of any file
+as a spectrogram (0-24 or 0-48 kHz, the 4-capsule mean or one capsule) and audio, at normal and half
+speed. Files are read from their bytes (``recording_qc.pcm_view``), so a file the recorder never finalised
+plays too. ``--raw-qc DIR`` (the ``recording_qc.py`` output for that folder) adds an overview of the
+call-band level over the whole folder, to jump to activity.
+
 ``--review DIR`` adds ``/review``: a generic listening review (e.g. ``tools/analysis/merge_review.py``):
 ``review.json`` (title, intro, answer options), ``items.tsv`` (``item_id``, any info columns,
 ``marks`` as JSON ``[[start_s, end_s, kind, label], ...]`` in clip seconds) and
@@ -35,7 +41,7 @@ Every request must carry the token printed at start-up (``?t=...``): on the clus
 server listens on a compute node that other users can reach.
 
 Usage:
-    python tools/corpus/call_library.py RUN [--port 8765] [--host 127.0.0.1] [--all] [--donors DIR] [--backgrounds DIR] [--synth DIR] [--short-high DIR] [--review DIR]
+    python tools/corpus/call_library.py RUN [--port 8765] [--host 127.0.0.1] [--all] [--donors DIR] [--backgrounds DIR] [--synth DIR] [--short-high DIR] [--review DIR] [--raw DIR [--raw-qc DIR]]
     (--all: every recording, not only the cleaned ones)
 On the cluster: tools/cluster/call_library.sbatch, then an SSH tunnel; see its header.
 """
@@ -50,6 +56,7 @@ import json
 import random
 import re
 import secrets
+import sys
 import threading
 from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -288,7 +295,74 @@ class Review:
         _append_feedback(self.feedback_path, self.lock, "item_id", d)
 
 
+class RawFolder:
+    """A raw recording folder: any window of any file, as audio and spectrogram, read from the bytes on disk.
+
+    Files shorter than a second (the recorder's false starts) or without a bext timestamp are left out.
+    ``qc``: the ``tools/analysis/recording_qc.py`` output of the same folder; its ``windows.tsv`` gives the
+    overview (10 s windows: wall time, 5-12 kHz and 12-24 kHz level).
+    """
+
+    MAX_S = 60.0
+
+    def __init__(self, folder: Path, qc: Optional[Path] = None) -> None:
+        if str(HERE.parent.parent) not in sys.path:      # run as a script without PYTHONPATH (locally)
+            sys.path.insert(0, str(HERE.parent.parent))
+        from marmoset_developmental_agent.io.raw_reader import read_bext_datetime
+        from tools.analysis.recording_qc import decode, pcm_view
+        self.decode = decode
+        self.name = folder.name
+        self.views: Dict[str, Tuple[np.ndarray, int, int]] = {}
+        self.files: List[Dict] = []
+        for p in sorted(folder.glob("*.WAV")):
+            try:
+                raw, sr, ch = pcm_view(p)
+            except ValueError:
+                continue
+            start = read_bext_datetime(p)
+            if start is None or len(raw) < sr:
+                continue
+            self.views[p.stem] = (raw, sr, ch)
+            self.files.append({"file": p.stem, "start": start.isoformat(), "duration_s": round(len(raw) / sr, 2),
+                               "sr": sr, "channels": ch})
+        self.overview: List[List] = []
+        if qc is not None and (qc / "windows.tsv").exists():
+            self.overview = [[r["wall"], round(float(r["band2"]), 1), round(float(r["band3"]), 1)]
+                             for r in csv.DictReader(open(qc / "windows.tsv"), delimiter="\t") if r["wall"]]
+
+    def audio(self, file: str, start_s: float, dur_s: float, ch: str) -> Tuple[np.ndarray, int]:
+        """``dur_s`` (at most ``MAX_S``) from ``start_s``: the 4-capsule mean (``ch="mean"``) or capsule ``ch`` (1-4)."""
+        raw, sr, n_ch = self.views[file]
+        a = max(0, int(start_s * sr))
+        x = self.decode(np.asarray(raw[a:a + int(min(dur_s, self.MAX_S) * sr)]), n_ch)
+        if not len(x):
+            raise KeyError(f"{file} has nothing at {start_s} s")
+        return (x.mean(axis=1) if ch == "mean" else x[:, int(ch) - 1]), sr
+
+
 REVIEW_COLORS = {"label": "#4fc1b8", "a": "#b9b8b2", "b": "#3987e5"}
+
+RAW_AXES = [0.035, 0.11, 0.955, 0.86]        # raw.html maps clicks and the playhead through these
+
+
+@lru_cache(maxsize=256)
+def _raw_png(file: str, start_s: float, dur_s: float, ch: str, fmax_khz: int) -> bytes:
+    """The window, 0-``fmax_khz``, each band in dB above its median over the window."""
+    x, sr = RAW[0].audio(file, start_s, dur_s, ch)
+    f, t, s = signal.stft(x, sr, nperseg=2048, noverlap=1536)
+    keep = f <= fmax_khz * 1000
+    p = 20 * np.log10(np.abs(s[keep]) + 1e-12)
+    p -= np.median(p, axis=1, keepdims=True)
+    fig = plt.figure(figsize=(13, 3.6), dpi=90)
+    ax = fig.add_axes(RAW_AXES)
+    ax.imshow(p, origin="lower", aspect="auto", cmap="magma", vmin=0, vmax=35,
+              extent=[0, len(x) / sr, 0, f[keep][-1] / 1000])
+    ax.set_ylabel("kHz", fontsize=7, color="#555")
+    ax.tick_params(labelsize=7, colors="#555")
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png")
+    plt.close(fig)
+    return buf.getvalue()
 
 
 @lru_cache(maxsize=512)
@@ -440,6 +514,7 @@ BACKGROUNDS: List[Backgrounds] = []
 SYNTH: List[SynthSet] = []
 SHORT_HIGH: List[ShortHigh] = []
 REVIEW: List[Review] = []
+RAW: List[RawFolder] = []
 MAP_NAME = re.compile(r"map(_c\d+)*")
 
 
@@ -547,6 +622,22 @@ def make_handler(lib_id: int, token: str):
                     self._send(_wav(x, sr), "audio/wav", cache=True)
                 elif path.startswith("/api/synth_spec/"):
                     self._send(_synth_png(path.split("/")[-1], q.get("answers", "1") == "1"), "image/png", cache=True)
+                elif path == "/raw":
+                    self._send((HERE / "raw.html").read_bytes(), "text/html; charset=utf-8")
+                elif path == "/api/raw":
+                    rw = RAW[0]
+                    self._send(json.dumps({"folder": rw.name, "files": rw.files, "overview": rw.overview,
+                                           "axes": RAW_AXES, "max_s": rw.MAX_S}).encode(), "application/json")
+                elif path.startswith("/api/raw_audio/") or path.startswith("/api/raw_spec/"):
+                    ch = q.get("ch", "mean")
+                    if ch not in ("mean", "1", "2", "3", "4"):
+                        raise KeyError(ch)
+                    args = (path.split("/")[-1], round(float(q.get("start", 0)), 2), float(q.get("dur", 30)), ch)
+                    if path.startswith("/api/raw_audio/"):
+                        x, sr = RAW[0].audio(*args)
+                        self._send(_wav(x, sr), "audio/wav", cache=True)
+                    else:
+                        self._send(_raw_png(*args, 48 if q.get("fmax") == "48" else 24), "image/png", cache=True)
                 elif path == "/review":
                     self._send((HERE / "review.html").read_bytes(), "text/html; charset=utf-8")
                 elif path == "/api/review":
@@ -583,7 +674,7 @@ def make_handler(lib_id: int, token: str):
                     self._send(_spectrogram_png(lib_id, path.split("/")[-1], q.get("v", "orig")), "image/png", cache=True)
                 else:
                     self._send(b"not found", "text/plain", 404)
-            except (KeyError, IndexError, FileNotFoundError) as e:
+            except (KeyError, IndexError, FileNotFoundError, ValueError) as e:
                 self._send(f"not found: {e}".encode(), "text/plain", 404)
 
         def do_POST(self) -> None:
@@ -663,6 +754,8 @@ def main() -> None:
     ap.add_argument("--synth", type=Path, help="a set of tools/synth/generate.py, served at /synth")
     ap.add_argument("--short-high", type=Path, help="folder of tools/analysis/find_short_high.py, served at /short_high")
     ap.add_argument("--review", type=Path, help="a review folder (review.json, items.tsv, clips/), served at /review")
+    ap.add_argument("--raw", type=Path, help="a raw recording folder (Rec_*), served at /raw")
+    ap.add_argument("--raw-qc", type=Path, help="recording_qc.py output for --raw: the activity overview")
     a = ap.parse_args()
     LIBS.append(Library(Path(a.run), a.all))
     if a.donors:
@@ -680,6 +773,9 @@ def main() -> None:
     if a.review:
         REVIEW.append(Review(a.review))
         print(f"{len(REVIEW[0].rows)} items to review at /review", flush=True)
+    if a.raw:
+        RAW.append(RawFolder(a.raw, a.raw_qc))
+        print(f"{len(RAW[0].files)} raw files ({len(RAW[0].overview)} overview windows) at /raw", flush=True)
     token = a.token or secrets.token_urlsafe(12)
     lib = LIBS[0]
     print(f"{len(lib.calls)} calls from {len(set(c['recording_id'] for c in lib.calls))} recordings", flush=True)
