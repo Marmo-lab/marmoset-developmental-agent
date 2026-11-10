@@ -23,3 +23,5 @@ or on the cluster under `$WORK_DIR`.
   detector's frame probabilities inside the call (`tools/analysis/synth_shift_probe.py`).
 
 Interpretation: `docs/SYNTH_EVAL.md`, results. Method: `docs/SYNTH_METHODS.md`.
+
+- `presence_table/presence_table.json`: segment-level call presence (1 min / 10 s / 1 s) of v2a vs. hand labels, P/R/F1/lift/kappa, in the format of Hasson et al. Table 1. `python tools/analysis/presence_table.py`
