@@ -374,3 +374,6 @@ Locally: `pytest tests/ -q` and `python run_pipeline.py --mock`.
 - v5_calls chain completed (detect, merge, clean). Library server on v5 with `/raw` page: job 66657867, elscn-110,
   port 37867, token unchanged. call_map on v5: job 66657828.
 - Workflow from now on: Two-Track Gatekeeper (core code = concept approval + staged diff).
+- Noise events (SYNTH_EVAL step 3a): `find_noise_events.py` on v5, 80 recordings / 81 h: 462 loud non-call events per hour
+  (most 6-12 kHz and < 0.2 s, so many may be missed calls), 4,028 suspect detections. 300 for listening at `/review`
+  (`$WORK_DIR/noise_events/`). Library server now job 66659597, elscn-105, port 39597. Planting logic proposed, awaiting approval.
