@@ -364,3 +364,13 @@ Locally: `pytest tests/ -q` and `python run_pipeline.py --mock`.
   `set -e` caller.
 - A stale pre-audit snapshot sits at `~/Omer_Lab_Project` (Sept 27, not a git repo).
   Untouched; delete when convenient.
+
+## 2026-11-10
+- New raw folder `Rec_2026_11_8-10`: Zoom H3-VR at **96 kHz** (not 48), 4 ch, same capsule order. 43.4 h continuous,
+  2026-11-08 15:30 -> 2026-11-10 10:59 (recorder clock, confirmed by the user; file mtimes are 7 h off). Last file
+  `261110_089` unfinalised (sizes 0, 26 min of audio). No clipping; clear day/night activity. QC:
+  `tools/analysis/recording_qc.py` -> `$WORK_DIR/recording_qc/Rec_2026_11_8-10/`, figure in `analysis/new_recordings_2026_11/`.
+  The pipeline still rejects 96 kHz (Track 1 decision pending).
+- v5_calls chain completed (detect, merge, clean). Library server on v5 with `/raw` page: job 66657867, elscn-110,
+  port 37867, token unchanged. call_map on v5: job 66657828.
+- Workflow from now on: Two-Track Gatekeeper (core code = concept approval + staged diff).
