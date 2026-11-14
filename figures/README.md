@@ -13,3 +13,5 @@ from in `data/` and the command that redraws it. Large or regenerable run output
 | `synth_v2test_models.png` | Production (v1) against the detector retrained with synthetic (train half) and real short high calls (v2), on the held-out synthetic test set (1,800 recordings): recall and precision against SNR with bootstrap bands; recall per call type at +6 dB. | `analysis/synth_eval/v2test/` | `python -m tools.analysis.synth_figures analysis/synth_eval/v2test figures --compare v2` |
 
 - `presence_table_v2a.png`: that table drawn in the paper layout. Redraw: `python tools/analysis/presence_table_figure.py`
+
+- `repertoire_v5.png/.pdf`: six calls the user picked from v5 detections (original audio): waveform (1 kHz high-pass), spectrogram, detection. Redraw: `python tools/analysis/repertoire_figure.py DIR figures/repertoire_v5 --ids ...` with DIR = `$WORK_DIR/figure_candidates` (ids and picks in `analysis/repertoire_figure/`)
