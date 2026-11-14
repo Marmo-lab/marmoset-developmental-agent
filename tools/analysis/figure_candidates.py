@@ -7,7 +7,9 @@ kind and names it by ear.
 
 Bins (duration s, peak frequency kHz, number of sub-segments in the run's ``notes``):
 ``CATEGORIES``. Within a bin: day hours (07-18), quality ``ok``, confidence >= ``MIN_CONF``, ranked by
-SNR, at most one call per recording (variety), ``PER_CAT`` kept. Each is cut from the raw recording,
+SNR, at most one call per recording (variety), ``PER_CAT`` kept. Calls within ``PAD_S`` + ``EDGE_S`` of either
+end of their recording file are left out: the clip would lack its margin, and a first try showed 17 of 72
+top candidates ending exactly at a file's end (likely cut calls, a detector edge effect worth a later look). Each is cut from the raw recording,
 the 4-capsule mean (what the detector hears), ``PAD_S`` on each side.
 
 Writes OUT/review.json, OUT/items.tsv, OUT/clips/<call_id>.flac.
@@ -29,6 +31,7 @@ SR = 48_000
 PAD_S = 0.4
 PER_CAT = 12
 MIN_CONF = 0.85
+EDGE_S = 0.2
 # name: (min dur, max dur, min peak kHz, max peak kHz, min segments, max segments)
 CATEGORIES: Dict[str, Tuple[float, float, float, float, int, int]] = {
     "phee-like (long tonal)": (0.8, 3.0, 5.5, 10.0, 1, 2),
@@ -71,8 +74,10 @@ def main() -> None:
     ap.add_argument("run", type=Path)
     ap.add_argument("out", type=Path)
     a = ap.parse_args()
+    length = {p.stem: json.loads(p.read_text())["duration_s"] for p in (a.run / "files").glob("*.json")}
     rows = [r for r in csv.DictReader(open(a.run / "calls.tsv"), delimiter="\t")
-            if r["quality"] == "ok" and float(r["confidence"]) >= MIN_CONF and 7 <= int(r["start_time"][11:13]) <= 18]
+            if r["quality"] == "ok" and float(r["confidence"]) >= MIN_CONF and 7 <= int(r["start_time"][11:13]) <= 18
+            and float(r["start_s"]) >= PAD_S + EDGE_S and float(r["end_s"]) <= length[r["recording_id"]] - PAD_S - EDGE_S]
     chosen = pick(rows)
     paths = {r: json.loads((a.run / "files" / f"{r}.json").read_text())["path"] for r in {c["recording_id"] for c in chosen}}
     (a.out / "clips").mkdir(parents=True, exist_ok=True)
