@@ -7,7 +7,8 @@ hears), uncleaned, with ``figure_candidates.PAD_S`` on each side.
 
 Layout (with the user): one panel per call, waveform on top, spectrogram, and the detector's call marked below.
 Spectrogram [ours]: 1024-point Hann window (21 ms) with a 1 ms hop, power in dB relative to the panel's
-loudest bin, shown over ``DB_RANGE`` dB, 0-``FMAX`` kHz.
+loudest bin inside the shown band, over ``DB_RANGE`` dB, ``FMIN``-``FMAX`` kHz (5-15 kHz at Didi's request,
+2026-11-14: where the calls' fundamentals are).
 
 Usage: python tools/analysis/repertoire_figure.py CANDIDATES_DIR OUT_STEM [--ids ID ...]
     (default: the items the user marked "pick", in page order)
@@ -28,13 +29,16 @@ import numpy as np  # noqa: E402
 import soundfile as sf  # noqa: E402
 from scipy import signal  # noqa: E402
 
-FMAX = 20.0
+FMIN, FMAX = 5.0, 15.0
 DB_RANGE = 55.0
-TITLE = "Detection of spontaneous marmoset vocalizations in the colony"
+TITLE = "Automated detection of spontaneous marmoset vocalizations in the colony"
+SUBTITLE = "Step 1 toward a language model for marmoset communication"
+# v5_calls, duplicates dropped (merge_calls): 2,602 recordings, 2,658.1 h over 137 days; 1,849,363 calls.
+STATS = "2,658 recording hours  ·  1.85 million detected calls  ·  17 animals in the colony"
 BAR = "#2a9d8f"
-# The waveform alone is high-passed at 1 kHz, as the detector's input is (PreprocessingConfig.learned): the
-# room's low rumble otherwise fills the trace and hides a quiet call. The spectrogram stays the original audio.
-HP = signal.butter(4, 1000, btype="highpass", fs=48_000, output="sos")
+# The waveform is band-passed to the same band the spectrogram shows: the room's rumble and broadband noise
+# otherwise fill the trace and hide a quiet call. The spectrogram itself is the original audio, cropped.
+HP = signal.butter(4, (FMIN * 1000, FMAX * 1000), btype="bandpass", fs=48_000, output="sos")
 
 
 def picked(folder: Path) -> List[str]:
@@ -49,14 +53,15 @@ def picked(folder: Path) -> List[str]:
 def draw(folder: Path, ids: List[str], out: Path, cols: int = 3) -> None:
     """One panel per call in a grid: waveform on top, spectrogram, the detection below.
 
-    Panels are the same size, so each has its own time axis (labelled); frequency (0-``FMAX`` kHz) and colour
-    (``DB_RANGE`` dB below the panel's loudest bin) are the same in all. The waveform is scaled to its own
-    peak and high-passed at 1 kHz (see ``HP``): it shows the call's shape in time, not its loudness."""
+    Panels are the same size, so each has its own time axis (labelled); frequency and colour are the same in
+    all. The waveform is scaled to its own peak and band-passed like the spectrogram (``HP``): it shows the
+    call's shape in time, not its loudness."""
     items = {r["item_id"]: r for r in csv.DictReader(open(folder / "items.tsv"), delimiter="\t")}
     rows = (len(ids) + cols - 1) // cols
-    fig = plt.figure(figsize=(4.6 * cols, 3.9 * rows + 0.6))
-    outer = fig.add_gridspec(rows, cols, hspace=0.28, wspace=0.16, left=0.05, right=0.99, top=1 - 0.75 / (3.9 * rows + 0.6),
-                             bottom=0.06)
+    head = 2.0
+    fig = plt.figure(figsize=(5.4 * cols, 4.3 * rows + head))
+    outer = fig.add_gridspec(rows, cols, hspace=0.36, wspace=0.14, left=0.075, right=0.99, top=1 - head / (4.3 * rows + head),
+                             bottom=0.05)
     for k, i in enumerate(ids):
         x, sr = sf.read(folder / "clips" / f"{i}.flac", dtype="float64")
         a, b = json.loads(items[i]["marks"])[0][:2]
@@ -69,19 +74,19 @@ def draw(folder: Path, ids: List[str], out: Path, cols: int = 3) -> None:
         wav.set_xlim(0, dur)
         wav.set_ylim(-1.05, 1.05)
         wav.axis("off")
-        wav.text(0.0, 1.02, "ABCDEFGHIJ"[k], transform=wav.transAxes, fontsize=12, fontweight="bold", va="bottom")
+        wav.text(0.0, 1.02, "ABCDEFGHIJ"[k], transform=wav.transAxes, fontsize=17, fontweight="bold", va="bottom")
         f, tt, z = signal.stft(x, sr, window="hann", nperseg=1024, noverlap=1024 - sr // 1000)
         p = 20 * np.log10(np.abs(z) + 1e-12)
-        keep = f <= FMAX * 1000
+        keep = (f >= FMIN * 1000) & (f <= FMAX * 1000)
         p = p[keep] - p[keep].max()
         ax = fig.add_subplot(g[1])
         ax.imshow(p, origin="lower", aspect="auto", cmap="magma", vmin=-DB_RANGE, vmax=0,
-                  extent=[0, dur, 0, f[keep][-1] / 1000], interpolation="bilinear")
+                  extent=[0, dur, f[keep][0] / 1000, f[keep][-1] / 1000], interpolation="bilinear")
         ax.set_xlim(0, dur)
-        ax.tick_params(bottom=False, labelbottom=False, labelsize=8)
-        ax.set_yticks([0, 5, 10, 15, 20])
+        ax.tick_params(bottom=False, labelbottom=False, labelsize=12)
+        ax.set_yticks([5, 10, 15])
         if k % cols == 0:
-            ax.set_ylabel("Frequency (kHz)", fontsize=9)
+            ax.set_ylabel("Frequency (kHz)", fontsize=13)
         for sp in ax.spines.values():
             sp.set_visible(False)
         bar = fig.add_subplot(g[2])
@@ -91,13 +96,16 @@ def draw(folder: Path, ids: List[str], out: Path, cols: int = 3) -> None:
         bar.set_yticks([])
         step = 0.5 if dur > 1.5 else 0.2
         bar.set_xticks(np.arange(0, dur + 1e-9, step))
-        bar.tick_params(labelsize=8, length=2)
+        bar.tick_params(labelsize=12, length=3)
         for sp in ("top", "right", "left"):
             bar.spines[sp].set_visible(False)
-        bar.set_xlabel("Time (s)", fontsize=8, labelpad=1)
+        bar.set_xlabel("Time (s)", fontsize=13, labelpad=1)
         if k % cols == 0:
-            bar.text(-0.02, 0.5, "detected", transform=bar.transAxes, ha="right", va="center", fontsize=8.5, color=BAR)
-    fig.suptitle(TITLE, fontsize=14, fontweight="bold", y=0.995)
+            bar.text(-0.02, 0.5, "detected", transform=bar.transAxes, ha="right", va="center", fontsize=12, color=BAR, fontweight="bold")
+    H = fig.get_figheight()
+    fig.text(0.5, 1 - 0.30 / H, TITLE, ha="center", va="top", fontsize=24, fontweight="bold")
+    fig.text(0.5, 1 - 0.80 / H, SUBTITLE, ha="center", va="top", fontsize=18, style="italic")
+    fig.text(0.5, 1 - 1.17 / H, STATS, ha="center", va="top", fontsize=15, color="#444")
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out.with_suffix(".png"), dpi=300)
     fig.savefig(out.with_suffix(".pdf"))
