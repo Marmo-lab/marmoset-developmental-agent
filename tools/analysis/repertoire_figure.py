@@ -30,7 +30,7 @@ from scipy import signal  # noqa: E402
 
 FMAX = 20.0
 DB_RANGE = 55.0
-TITLE = "Automatic detection of spontaneous marmoset vocalizations in the colony"
+TITLE = "Detection of spontaneous marmoset vocalizations in the colony"
 BAR = "#2a9d8f"
 # The waveform alone is high-passed at 1 kHz, as the detector's input is (PreprocessingConfig.learned): the
 # room's low rumble otherwise fills the trace and hides a quiet call. The spectrogram stays the original audio.
