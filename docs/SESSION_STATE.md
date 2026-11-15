@@ -377,3 +377,18 @@ Locally: `pytest tests/ -q` and `python run_pipeline.py --mock`.
 - Noise events (SYNTH_EVAL step 3a): `find_noise_events.py` on v5, 80 recordings / 81 h: 462 loud non-call events per hour
   (most 6-12 kHz and < 0.2 s, so many may be missed calls), 4,028 suspect detections. 300 for listening at `/review`
   (`$WORK_DIR/noise_events/`). Library server now job 66659597, elscn-105, port 39597. Planting logic proposed, awaiting approval.
+- Noise planting approved and run (redesigned with the user: one realistic set, not a paired robustness test):
+  `tools/synth/plant_noise.py`, `analysis/synth_eval/v2test_noise/`, results in SYNTH_EVAL.md. Noises cost recall
+  (1 s presence R 0.96 -> 0.92), not precision.
+- Presence table in the format of Hasson et al. Table 1: `tools/analysis/presence_table.py`, `figures/presence_table_v2a.png`.
+
+## 2026-11-14/15
+- Repertoire figure for a management presentation (Didi): `figures/repertoire_v5.png/.pdf`, 9 calls picked by the user
+  from `figure_candidates.py`, `repertoire_figure.py`. Corpus numbers used: 2,658 h (2,602 recordings after the merge
+  dropped 117 duplicates), 137 days, 1,849,363 calls, 17 animals.
+- **Found, not yet studied:** many top-SNR detections end exactly at a recording file's end (17 of 72 first candidates,
+  all 12 peep/chirp ones). Likely a detector edge effect at file boundaries. Track 1 investigation pending.
+- The user now works in VS Code and approves complex file edits there.
+- Open: 96 kHz -> 48 kHz for the new recordings (Track 1); Didi's ridge-resynthesis proposal (comparison not started);
+  file-edge detections; second rater for human-human kappa; more noise labels; day background (synth 2b);
+  v5 vs v4 comparison; v5 call map is coarse (4 clusters, one of 24k); then the developmental agent (goal 2).
