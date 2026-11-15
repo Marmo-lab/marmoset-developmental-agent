@@ -182,3 +182,24 @@ v2a, front-end view, same 300 minutes without -> with noise: any-overlap recall 
 0.741 -> 0.718, precision 0.995 -> 0.996, false alarms 4.8 -> 4.2 per hour. Per 1 s segment: P 0.98 -> 0.99,
 R 0.96 -> 0.92, F1 0.97 -> 0.95, kappa 0.86 -> 0.79. Of the 665 noises clear of every call, a detection fired on
 7% of the cage noises and none of the people or doors. So the noises cost recall (calls masked), not precision.
+
+## Real colony SNR on the synthetic scale (2026-11-15)
+Which SNR level matches our colony? `tools/analysis/real_snr.py` measures all 761 hand-labelled calls (`c` and `?`;
+calibration, held-out and test) with the generator's definition: band RMS (5-20 kHz) of the call alone over that of
+the background, on the raw 4-capsule mean. Background: call-free audio within 3 s of the call. Two variants: the
+mean power (as the generator) and the floor (median 50 ms frame power), which ignores transients beside a call; the
+synthetic night backgrounds are stationary and their noises are planted separately, so the floor is the
+like-for-like one. Results in `analysis/real_snr/`.
+
+| | p10 | p25 | median | p75 | p90 | below +3.5 dB |
+|---|---|---|---|---|---|---|
+| floor, all calls | +0.7 | +5.1 | +9.6 | +15.3 | +22.0 | 19% |
+| floor, shorter than 0.5 s | -1.6 | +2.0 | +6.1 | +10.0 | +14.1 | 36% |
+| floor, 0.5 s or longer | +5.0 | +8.6 | +13.1 | +18.2 | +24.8 | 6% |
+| mean, all calls | -3.2 | +2.1 | +7.0 | +12.3 | +17.7 | 43% |
+
+The three label sets agree (floor medians +8.7 to +10.8 dB). The synthetic v2a scores (front end, no noise) weighted by
+the real distribution (each call at its nearest level): overlap recall 0.94 (floor) / 0.90 (mean), main recall 0.79 /
+0.75. So SNR 1.5 (+3.5 dB) sits near the colony's 20th-40th percentile: harder than typical, not extreme; and the
+real-mix overlap recall (0.90-0.94) is close to the 0.95 v2a reaches on the same hand labels. Bias: the labeller marks
+calls they hear, so quiet calls are under-represented. Short calls are quieter than long ones by about 7 dB.
