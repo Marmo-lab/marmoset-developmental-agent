@@ -1,0 +1,73 @@
+{
+ "stats": {
+  "recordings": 2602,
+  "hours": 2658.1,
+  "calls": 1849363,
+  "calls_train": 1761802,
+  "touch_s": 0.05,
+  "end_touching": {
+   "n": 377,
+   "median_duration_s": 0.515,
+   "median_snr_db": 23.8,
+   "median_confidence": 0.932,
+   "median_peak_khz": 8.12,
+   "share_night_19_to_7": 0.029,
+   "share_in_calls_train": 0.995,
+   "call_hours": 0.09
+  },
+  "start_touching": {
+   "n": 324,
+   "median_duration_s": 0.578,
+   "median_snr_db": 19.9,
+   "median_confidence": 0.9,
+   "median_peak_khz": 8.12,
+   "share_night_19_to_7": 0.025,
+   "share_in_calls_train": 0.972,
+   "call_hours": 0.09
+  },
+  "all_calls": {
+   "n": 1849363,
+   "median_duration_s": 0.525,
+   "median_snr_db": 19.5,
+   "median_confidence": 0.866,
+   "median_peak_khz": 8.62,
+   "share_night_19_to_7": 0.032,
+   "share_in_calls_train": 0.953,
+   "call_hours": 405.53
+  },
+  "files_with_end_touching": 377,
+  "files_with_start_touching": 324,
+  "share_of_files_with_end_touching": 0.145,
+  "last_0.1s_bin_vs_flat_rate": 8.1,
+  "tail_hist_first_10_bins": [
+   398,
+   53,
+   62,
+   55,
+   52,
+   44,
+   60,
+   56,
+   50,
+   57
+  ],
+  "tail_flat_rate_per_bin": 49.3,
+  "continuous_successor": 2528,
+  "end_touching_with_start_touching_successor": 228,
+  "end_touching_of_continuous_files": 355
+ },
+ "context": {
+  "file_end": {
+   "cases": 150,
+   "edge_detection_when_cut": 0.987,
+   "of_those_vanish_with_continuation (artifact)": 0.02,
+   "of_those_continue_across_junction (cut call)": 0.777
+  },
+  "interior": {
+   "cases": 150,
+   "edge_detection_when_cut": 0.347,
+   "of_those_vanish_with_continuation (artifact)": 0.0,
+   "of_those_continue_across_junction (cut call)": 0.846
+  }
+ }
+}

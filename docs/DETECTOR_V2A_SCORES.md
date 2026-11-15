@@ -175,3 +175,35 @@ Of the 665 noises clear of every call, a detection fired on 7% of the cage noise
 | presence | `analysis/presence_table/presence_table.json` |
 | synthetic | `analysis/synth_eval/v2test/scores_v2a.json` and `analysis/synth_eval/v2test_noise/scores_v2a.json` |
 | figures | `figures/presence_table_v2a.png` |
+
+## 4. Detections at recording-file edges (checked 2026-11-15)
+**What was seen.** Picking calls for a figure, many of the strongest detections ended exactly at a recording file's end.
+`tools/analysis/file_edges.py` ran on v5, results in `analysis/file_edges/`.
+
+**How many.**
+
+| measure | value |
+|---|---|
+| detections ending within 50 ms of their file's end | 377 (in 14.5% of files) |
+| detections starting within 50 ms of their file's start | 324 |
+| rate in the last 0.1 s of a file, against the rate 1–30 s from the end | 8× |
+| end-touching detections whose file continues seamlessly into the next one | 355 |
+| of those, with a start-touching detection in the next file | 228 |
+
+**What they are: real calls cut by the recorder's file split, not an artifact.** The test ran the production detector
+on the last 70 s of a file twice: alone, and with the next file's first 10 s appended (150 file ends).
+
+| case | edge detection when cut | vanishes with the continuation (artifact) | continues across the junction (cut call) |
+|---|---|---|---|
+| file ends | 0.99 | 0.02 | 0.78 |
+| control: random interior cut points | 0.35 | 0.00 | 0.85 |
+
+**Effect.**
+- A call that spans a file split becomes two partial detections, one at the end of each file.
+- They are about 700 of 1.85 million calls (0.04%) and 0.18 of 405 call-hours. That is negligible for the corpus and
+  for training.
+- None of the detector's evaluations is affected: hand and synthetic clips always carry context around their calls.
+- Their median SNR (23.8 dB, against 19.5 overall) puts them high on any SNR-ranked list, so tools that rank calls
+  should skip file edges, as `figure_candidates.py` now does.
+- A cure, if wanted later (Track 1): join an end-touching call with a start-touching call in the seamless next file in
+  `merge_calls`.
