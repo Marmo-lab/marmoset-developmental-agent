@@ -28,3 +28,18 @@ def test_call_below_background_is_zero_and_level_mapping() -> None:
     bp[5 * SR:int(5.3 * SR)] *= 0.5
     assert call_snr(bp, [(5.0, 5.3)], 0)["snr"] == 0.0
     assert nearest_level(25.0) == 10.0 and nearest_level(3.0) == 1.5 and nearest_level(float("-inf")) == 0.7
+
+
+def test_floor_ignores_a_transient_beside_the_call() -> None:
+    rng = np.random.default_rng(2)
+    b = rng.normal(0, 0.01, 20 * SR)
+    t = np.arange(int(0.4 * SR)) / SR
+    s = np.sin(2 * np.pi * 8000 * t)
+    i = 10 * SR
+    g = 2.0 * rms(bandpass(b)[i:i + len(s)]) / rms(bandpass(s))
+    x = b.copy()
+    x[i:i + len(s)] += g * s
+    x[int(11 * SR):int(11.2 * SR)] += rng.normal(0, 0.2, int(0.2 * SR))      # a loud bang 0.6 s after the call
+    r = call_snr(bandpass(x), [(10.0, 10.4)], 0)
+    assert r["snr_db"] < 0.0
+    assert 10 ** (r["snr_floor_db"] / 20) == pytest.approx(2.0, rel=0.15)

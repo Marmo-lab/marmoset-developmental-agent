@@ -10,7 +10,11 @@ Real audio holds call and background together, so [ours]: P_seg = mean band powe
 mean band power of the clip's call-free audio within ``LOCAL_S`` of the call (labels widened by ``GUARD_S``; the
 whole clip's call-free audio when that is shorter than ``MIN_BG_S``), and SNR = sqrt(max(P_seg / P_bg - 1, 0))
 (the call's own power, assuming call and background add in power). A label at or below the background gets SNR 0
-(-inf dB). ``snr_naive_db`` keeps P_seg / P_bg without the subtraction. Audio: the raw recording's 4-capsule mean,
+(-inf dB). ``snr_naive_db`` keeps P_seg / P_bg without the subtraction. ``snr_floor_db`` uses the background's
+*floor* instead: the median power of its ``FRAME_S`` frames. In stationary noise (the synthetic night backgrounds) the
+median frame power is about the mean, so the two agree; in day audio, transients beside a call (cage, other noise)
+raise the mean but not the median. The synthetic set plants such transients separately (``plant_noise.py``), so the
+floor is the like-for-like comparison with its SNR levels. Audio: the raw recording's 4-capsule mean,
 what the detector hears and what the synthetic backgrounds were cut from (``backgrounds.py``).
 
 Bias, stated: the labeller marks calls they hear, so quiet calls are under-represented here.
@@ -43,9 +47,10 @@ EDGE_S = 1.0          # extra audio read on each side so the zero-phase filter h
 GUARD_S = 0.1         # call-free means at least this far from any label
 LOCAL_S = 3.0
 MIN_BG_S = 0.5
+FRAME_S = 0.05
 LABEL_SETS = ("data/labels/handlabels.csv", "data/labels/heldout_labels.csv", "data/labels/test_labels.csv")
 FIELDS = ["set", "clip_id", "label", "start_s", "end_s", "duration_s", "bg_s", "bg_scope", "snr", "snr_db",
-          "snr_naive_db"]
+          "snr_naive_db", "snr_floor_db"]
 
 
 def call_snr(bp: np.ndarray, spans: Sequence[Tuple[float, float]], k: int) -> Dict:
@@ -64,9 +69,14 @@ def call_snr(bp: np.ndarray, spans: Sequence[Tuple[float, float]], k: int) -> Di
         bg, scope = free, "clip"
     p_bg = float(np.mean(np.square(bp[bg])))
     snr = float(np.sqrt(max(p_seg / p_bg - 1.0, 0.0)))
+    m = int(FRAME_S * SR)
+    frames = [np.mean(np.square(bp[i:i + m])) for i in range(0, n - m + 1, m) if bg[i:i + m].all()]
+    p_floor = float(np.median(frames)) if frames else p_bg
+    floor = float(np.sqrt(max(p_seg / p_floor - 1.0, 0.0)))
     return {"bg_s": round(bg.sum() / SR, 2), "bg_scope": scope, "snr": round(snr, 4),
             "snr_db": round(20 * np.log10(snr), 2) if snr > 0 else float("-inf"),
-            "snr_naive_db": round(10 * np.log10(p_seg / p_bg), 2)}
+            "snr_naive_db": round(10 * np.log10(p_seg / p_bg), 2),
+            "snr_floor_db": round(20 * np.log10(floor), 2) if floor > 0 else float("-inf")}
 
 
 def read_clip(path: str, start: int) -> Tuple[np.ndarray, int]:
@@ -114,14 +124,20 @@ def _quant(v: List[float]) -> Dict[str, float]:
 
 def summary(out: Path, scores: Path) -> None:
     rows = list(csv.DictReader(open(out / "calls.tsv"), delimiter="\t"))
-    sc = json.loads(scores.read_text())["views"]["front_end"]["by_snr"]
+    res = {col: _summary(rows, scores, col) for col in ("snr_db", "snr_floor_db")}
+    (out / "summary.json").write_text(json.dumps(res, indent=1))
+    print(json.dumps(res, indent=1))
+
+
+def _summary(rows: List[Dict], scores: Path, col: str) -> Dict:
+    sc = {float(k): v for k, v in json.loads(scores.read_text())["views"]["front_end"]["by_snr"].items()}
     res: Dict[str, Dict] = {}
     groups = {"all": rows, "c only": [r for r in rows if r["label"] == "c"],
               **{s: [r for r in rows if r["set"] == s] for s in sorted({r["set"] for r in rows})},
               "short (< 0.5 s)": [r for r in rows if float(r["duration_s"]) < 0.5],
               "long (>= 0.5 s)": [r for r in rows if float(r["duration_s"]) >= 0.5]}
     for name, rs in groups.items():
-        db = [float(r["snr_db"]) for r in rs]
+        db = [float(r[col]) for r in rs]
         finite = [d for d in db if np.isfinite(d)]
         share = defaultdict(int)
         for d in db:
@@ -133,13 +149,12 @@ def summary(out: Path, scores: Path) -> None:
             "below_+3.5_dB": round(sum(d < 20 * np.log10(1.5) for d in db) / len(db), 3),
             "naive_snr_db_median": round(float(np.median([float(r["snr_naive_db"]) for r in rs])), 1),
             "share_by_nearest_level": share,
-            "synthetic_v2a_weighted": {k: round(sum(w[s] * sc[f"{s:g}"][k] for s in SNR_LEVELS), 3)
+            "synthetic_v2a_weighted": {k: round(sum(w[s] * sc[s][k] for s in SNR_LEVELS), 3)
                                        for k in ("recall", "recall_main", "precision_main", "recall_iou")},
         }
     res["synthetic_v2a_by_level"] = {f"{sc[k]['snr_db']:+.1f} dB": {m: round(sc[k][m], 3) for m in ("recall", "recall_main")}
                                      for k in sc}
-    (out / "summary.json").write_text(json.dumps(res, indent=1))
-    print(json.dumps(res, indent=1))
+    return res
 
 
 def main() -> None:
