@@ -1,7 +1,7 @@
 """Streaming 4-channel reader, bext parsing, and capsule-combination strategies.
 
 Everything here runs on synthetic WAVs written to a tmp dir, so the suite stays
-CPU-only and cluster-independent (CLAUDE.md guardrail 3). The real-data counterpart
+CPU-only and cluster-independent (CONVENTIONS.md, guardrail 3). The real-data counterpart
 is tools/build_manifest.py run against AnimalRoomRecordings on the cluster.
 """
 

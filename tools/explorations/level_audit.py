@@ -16,7 +16,7 @@ Reads in windows rather than whole-file: one 62-minute 4-channel file is ~2.9 GB
 float32 and must never be loaded at once.
 
 Usage:
-    python tools/analysis/level_audit.py <file.wav> [--windows 40] [--window-s 15]
+    python tools/explorations/level_audit.py <file.wav> [--windows 40] [--window-s 15]
 """
 
 from __future__ import annotations

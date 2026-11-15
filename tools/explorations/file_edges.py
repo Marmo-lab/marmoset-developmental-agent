@@ -20,10 +20,10 @@ Steps [ours]:
   Control: the same on ``N_CASES`` random interior cut points, where the "edge" is made by us.
 * ``summary OUT``: both into ``summary.json``.
 
-Usage (cluster, tools/cluster/file_edges.sbatch):
-    python tools/analysis/file_edges.py stats RUN OUT
-    python tools/analysis/file_edges.py context RUN OUT --task I --n-tasks N
-    python tools/analysis/file_edges.py summary OUT
+Usage (cluster, tools/explorations/cluster/file_edges.sbatch):
+    python tools/explorations/file_edges.py stats RUN OUT
+    python tools/explorations/file_edges.py context RUN OUT --task I --n-tasks N
+    python tools/explorations/file_edges.py summary OUT
 """
 
 from __future__ import annotations

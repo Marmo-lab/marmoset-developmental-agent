@@ -1,7 +1,7 @@
 """Call map: a 2-D embedding of a corpus run's calls, to see whether they form clouds by type.
 
 Exploration only. The developmental agent stays unsupervised and nothing here feeds the
-pipeline (CLAUDE.md non-goals: no call-type classification). The map is a check on the
+pipeline (a non-goal: no call-type classification). The map is a check on the
 corpus: if the detector cuts whole calls, calls of one type should land together, and
 noise or fragments should form their own islands. It is also the reference against
 which the agent's units can later be compared.

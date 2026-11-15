@@ -44,13 +44,13 @@ Writes under OUT: ``selftest.json``, ``scan/<recording_id>.tsv``, ``candidates.t
 ``summary.json``, ``clips/<cand_id>.flac``, ``minutes/<minute_id>.flac`` and ``minutes/positives.tsv``,
 ``realeval_<N>/<recording_id>.tsv`` and ``realscore_<N>.json``.
 
-Usage (on the cluster, via tools/cluster/short_high.sbatch):
-    python tools/analysis/find_short_high.py selftest SET OUT
-    python tools/analysis/find_short_high.py scan RUN OUT [--task-index I --n-tasks N]
-    python tools/analysis/find_short_high.py select RUN OUT [--n 150]
-    python tools/analysis/find_short_high.py minutes RUN OUT
-    python tools/analysis/find_short_high.py realeval RUN OUT --model M --name N --nights DIR [--task-index I --n-tasks K]
-    python tools/analysis/find_short_high.py realscore RUN OUT --name N
+Usage (on the cluster, via tools/explorations/cluster/short_high.sbatch):
+    python tools/explorations/find_short_high.py selftest SET OUT
+    python tools/explorations/find_short_high.py scan RUN OUT [--task-index I --n-tasks N]
+    python tools/explorations/find_short_high.py select RUN OUT [--n 150]
+    python tools/explorations/find_short_high.py minutes RUN OUT
+    python tools/explorations/find_short_high.py realeval RUN OUT --model M --name N --nights DIR [--task-index I --n-tasks K]
+    python tools/explorations/find_short_high.py realscore RUN OUT --name N
 """
 
 from __future__ import annotations

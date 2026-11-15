@@ -1,4 +1,4 @@
-"""tools/analysis/file_edges.py stats: edge-touching calls counted, successors and continuity found."""
+"""tools/explorations/file_edges.py stats: edge-touching calls counted, successors and continuity found."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import csv
 import json
 from pathlib import Path
 
-import tools.analysis.file_edges as fe
+import tools.explorations.file_edges as fe
 
 FIELDS = ["call_id", "recording_id", "start_time", "duration_s", "start_s", "end_s", "snr_db", "peak_freq_hz",
           "confidence", "quality"]

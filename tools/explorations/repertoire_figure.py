@@ -10,7 +10,7 @@ Spectrogram [ours]: 1024-point Hann window (21 ms) with a 1 ms hop, power in dB 
 loudest bin inside the shown band, over ``DB_RANGE`` dB, ``FMIN``-``FMAX`` kHz (5-15 kHz at Didi's request,
 2026-11-14: where the calls' fundamentals are).
 
-Usage: python tools/analysis/repertoire_figure.py CANDIDATES_DIR OUT_STEM [--ids ID ...]
+Usage: python tools/explorations/repertoire_figure.py CANDIDATES_DIR OUT_STEM [--ids ID ...]
     (default: the items the user marked "pick", in page order)
 """
 

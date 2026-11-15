@@ -1,4 +1,4 @@
-"""tools/analysis/find_short_high.py: the energy rule finds short high sweeps and leaves normal calls and clicks."""
+"""tools/explorations/find_short_high.py: the energy rule finds short high sweeps and leaves normal calls and clicks."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Tuple
 
 import numpy as np
 
-import tools.analysis.find_short_high as fsh
+import tools.explorations.find_short_high as fsh
 
 SR = fsh.SR
 
@@ -147,7 +147,7 @@ def test_library_serves_a_generic_review(tmp_path: Path) -> None:
 
 
 def test_merge_cases_are_new_joins_on_day_clips() -> None:
-    from tools.analysis.merge_review import cases
+    from tools.explorations.merge_review import cases
     labels = {"c": [(1.0, 1.5), (1.8, 2.2), (5.0, 5.5), (5.7, 6.0)], "n": [(1.0, 1.5), (1.8, 2.2)]}
     a = {"c": [(0.9, 1.6), (1.7, 2.3), (4.9, 6.1)]}                 # A already joins the second pair
     b = {"c": [(0.9, 2.3), (4.9, 6.1)], "n": [(0.9, 2.3)]}

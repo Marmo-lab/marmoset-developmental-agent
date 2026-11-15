@@ -2,7 +2,7 @@
 # Pick one raw WAV per Nth recording folder, spread across the corpus date range.
 # Writes absolute paths, one per line, for consumption by level_audit.sbatch.
 #
-#   bash tools/cluster/sample_files.sh [stride] > files.txt
+#   bash tools/explorations/cluster/sample_files.sh [stride] > files.txt
 #
 # Excludes Rec_2021_06_28_ultrasonic_recordings_colony: a different instrument
 # (250 kHz mono, no bext chunk) that must never go through a 48 kHz-assuming path.

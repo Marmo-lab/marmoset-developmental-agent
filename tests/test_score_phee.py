@@ -31,7 +31,7 @@ def test_phees_scored_on_their_own_channel_and_other_detections_sorted():
 
 
 def test_listening_page_takes_only_one_to_one_matches():
-    from tools.analysis.listen_phee_edges import one_to_one
+    from tools.explorations.listen_phee_edges import one_to_one
 
     x = {"phees": [(1, 10.0, 11.0, "A"), (1, 11.2, 12.0, "A"), (1, 20.0, 21.0, "A"), (2, 30.0, 31.0, "B")],
          "detections": {"1": [(9.9, 12.3, 0.9),                    # merges two phees: excluded

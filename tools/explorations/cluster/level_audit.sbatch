@@ -1,9 +1,9 @@
 #!/bin/bash
 # Array job: run the |STFT| level audit over a list of raw recordings.
 #
-#   bash tools/cluster/sample_files.sh 6 > ~/marmoset_work/level_files.txt
+#   bash tools/explorations/cluster/sample_files.sh 6 > ~/marmoset_work/level_files.txt
 #   sbatch --array=1-$(wc -l < ~/marmoset_work/level_files.txt) \
-#          tools/cluster/level_audit.sbatch ~/marmoset_work/level_files.txt
+#          tools/explorations/cluster/level_audit.sbatch ~/marmoset_work/level_files.txt
 #
 #SBATCH --job-name=level-audit
 #SBATCH --partition=elscn.q
@@ -25,5 +25,5 @@ mkdir -p "$OUT"
 STEM="$(basename "$(dirname "$WAV")")_$(basename "$WAV" .WAV)"
 
 echo "task $SLURM_ARRAY_TASK_ID -> $WAV"
-python "$PROJECT_DIR/tools/analysis/level_audit.py" "$WAV" \
+python "$PROJECT_DIR/tools/explorations/level_audit.py" "$WAV" \
     --windows 40 --window-s 15 --json-out "$OUT/level_${STEM}.json"

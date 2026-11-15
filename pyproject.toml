@@ -13,7 +13,7 @@ extend-exclude = ["references", "labeling", "outputs"]
 
 [tool.ruff.lint]
 # Bug-finding rules only: pyflakes (F), pycodestyle errors (E4/E7/E9), bugbear (B).
-# No formatter and no line-length rule -- style is not a review failure (REVIEW.md).
+# No formatter and no line-length rule -- style is not a review failure.
 select = ["E4", "E7", "E9", "F", "B"]
 ignore = [
     "B905",  # zip() without strict=: noisy here; lengths are checked where it matters

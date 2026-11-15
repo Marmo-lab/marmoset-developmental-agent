@@ -2,8 +2,8 @@
 # Array job: five-strategy capsule evaluation over a list of raw recordings.
 #
 #   sbatch --array=1-$(wc -l < ~/marmoset_work/level_files.txt)%20 \
-#          tools/cluster/channel_eval.sbatch ~/marmoset_work/level_files.txt
-#   python tools/analysis/channel_eval.py aggregate ~/marmoset_work/channel_eval
+#          tools/explorations/cluster/channel_eval.sbatch ~/marmoset_work/level_files.txt
+#   python tools/explorations/channel_eval.py aggregate ~/marmoset_work/channel_eval
 #
 #SBATCH --job-name=channel-eval
 #SBATCH --partition=elscn.q
@@ -18,4 +18,4 @@ LIST="${1:?usage: sbatch channel_eval.sbatch <file-list>}"
 WAV="$(sed -n "${SLURM_ARRAY_TASK_ID:-1}p" "$LIST")"
 OUT="$WORK_DIR/channel_eval"; mkdir -p "$OUT"
 STEM="$(basename "$(dirname "$WAV")")_$(basename "$WAV" .WAV)"
-python "$PROJECT_DIR/tools/analysis/channel_eval.py" run "$WAV" --json-out "$OUT/chan_${STEM}.json"
+python "$PROJECT_DIR/tools/explorations/channel_eval.py" run "$WAV" --json-out "$OUT/chan_${STEM}.json"

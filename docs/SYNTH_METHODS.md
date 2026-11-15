@@ -4,7 +4,7 @@ Paper-ready description of how the synthetic evaluation set is built and scored.
 and its checkpoints are in `SYNTH_EVAL.md`; this file says exactly what is done, with the
 numbers. Every item is marked **[done]** (implemented, the numbers are final),
 **[decided]** (agreed with the user, not yet implemented), or **[open]** (not yet decided).
-Sources follow the CLAUDE.md convention: `[paper]`, `[ours]`.
+Sources follow the provenance convention (CONVENTIONS.md, guardrail 6): `[paper]`, `[ours]`.
 
 ## 1. Purpose
 Hand labels (527 calls in 45 one-minute clips, `DETECTOR_EVAL.md`) give an absolute but

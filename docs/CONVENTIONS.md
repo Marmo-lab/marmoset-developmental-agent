@@ -1,6 +1,16 @@
 # Conventions and gotchas
 
-Detail moved out of `CLAUDE.md` to keep that file short. Read the section that matches the code you're touching.
+Read the guardrails before changing code, then the section that matches the code you're touching.
+
+## Guardrails (violations are review failures)
+1. **No deduplication.** Repeated units are never collapsed on any path to the uLM or the evaluations. Encoders return exactly `num_frames(L)` units, and the trainer calls `check_no_dedup`.
+2. **Strict typing and config.** Every public function and class gets full type hints. Config lives only in the `agent_config.py` dataclasses: no raw dicts, and unknown YAML keys raise.
+3. **Mock compatibility.** Every feature has a mock path, is exercised by `--mock`, and has a test.
+4. **Decoupled stages.** Stages share only `Chunk`, `CallSegment`, `BaseAudioEncoder`, `UnitLanguageModel` and the configs.
+5. **Chronology.** Never shuffle across days; only the sleep-replay portion of a day is shuffled.
+6. **Provenance.** Every constant or formula cites its source (`[paper]` / `[talia]` / `[ours]`, a paper section or a `references/` file), and divergences are stated.
+
+Before handing over a change: `pytest tests/` and `python -m ruff check .` on every change; `python run_pipeline.py --mock` for anything on the pipeline path; `sbatch tools/cluster/verify_port.sbatch` (must stay 23/23 at IoU 1.00) for anything touching `filter_5khz.py` or `segmentation.py`.
 
 ## Layout
 ```
@@ -20,9 +30,10 @@ marmoset_developmental_agent/
 tools/
   build_manifest.py, sweep_units.py
   analysis/                     verify_talia_port (the port gate), score_detectors, train_call_detector,
-                                score_testset (detector evaluation); level_audit, aggregate_levels,
-                                channel_eval, call_inventory (one-off audits, kept as provenance);
-                                calls_per_hour, synth_figures, synth_shift_probe, find_short_high (synthetic evaluation)
+                                score_testset, score_phee (detector evaluation); synth_figures, presence_table(_figure),
+                                real_snr (synthetic evaluation); calls_per_hour, call_map, call_inventory, recording_qc
+  explorations/                 one-off investigations whose results the docs cite (its README lists each);
+                                cluster/ holds their jobs
   labels/                       make_clips, make_guide, import_audacity, review_labels, phone_server (hand-label workflow, see LABELING.md)
   corpus/                       the production path, in order: detect_corpus (array job: per-recording call
                                 catalogue + call audio) -> merge_calls (chronological calls.tsv / calls_train.tsv)
@@ -30,12 +41,13 @@ tools/
                                 summarize_corpus (per-date / hour / quality / label check); merge_corpus (10 s chunk
                                 manifest, GmSLM comparison arm)
   synth/                        synthetic evaluation (SYNTH_EVAL.md, SYNTH_METHODS.md): donor_calls -> backgrounds
-                                -> generate
+                                -> generate -> plant_noise; score
   cluster/                      env.sh, setup_env.sh, *.sbatch (ELSC SLURM jobs)
 analysis/                       results worth keeping, small, with what produced them (analysis/README.md)
 figures/                        figures worth keeping, with their data and redraw command (figures/README.md)
-docs/                           ROADMAP, OPEN_DECISIONS, SESSION_STATE, DETECTOR_EVAL, LABELING, CODEMAP; audit/ = GmSLM code audit
-data/labels/                    hand labels (calibration: handlabels.csv, held-out: heldout_labels.csv)
+docs/                           ROADMAP, OPEN_DECISIONS, DETECTOR_EVAL, DETECTOR_V2A_SCORES, TEST_PROTOCOL, SYNTH_METHODS,
+                                SYNTH_EVAL, LABELING, CODEMAP; audit/ = GmSLM code audit
+data/labels/                    hand labels (calibration: handlabels.csv, held-out: heldout_labels.csv, blind test: test_labels.csv)
 references/                     git-ignored, read-only: upstream clones, Talia's code mirror, audit file index, her output sample
 labeling/                       git-ignored: calibration clips + audio; heldout/ = held-out clips
 outputs/                        git-ignored: run outputs and detector scores
@@ -73,4 +85,3 @@ The GmSLM code is not public, but Talia's working tree was audited (`docs/audit/
 - Login: `ssh elsc-login-direct` (lab network only). Source `tools/cluster/env.sh` (there is no `module` in batch shells).
 - Write only inside `$HOME` / `WORK_DIR`. Raw recordings and other labs' trees are read-only: never move, delete or rewrite them.
 - Heavy work goes through `sbatch`, not the login node. Use `$SLURM_SUBMIT_DIR`, not `$(dirname $0)`, inside jobs.
-- `SESSION_STATE.md` is the resume point after a dropped connection; update it before stopping.

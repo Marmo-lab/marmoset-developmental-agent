@@ -12,7 +12,7 @@ outputs/
 
 # Read-only upstream material, local only: nested git clones (hasson_dev, dinosr), the
 # mirror of Talia's code and the cluster file index from the GmSLM audit, and a sample of
-# her outputs. Never imported from (see CLAUDE.md non-goals).
+# her outputs. Read-only; never imported from.
 references/
 
 # Raw and sampled audio never belongs in git
@@ -37,3 +37,21 @@ labeling/
 
 # MarmoLabel build output
 apps/labeler/build/
+
+# Working notes for the coding assistant: kept locally, not part of the lab repository
+CLAUDE.md
+REVIEW.md
+docs/SESSION_STATE.md
+docs/audit/prompt_session*.txt
+.claude/
+
+# Large per-recording outputs of superseded runs and experimental detector variants: on the cluster under
+# $WORK_DIR/synth/sets/ (the inputs of current analyses, v2a on v2test and v2test_noise, stay in git)
+analysis/synth_eval/v1/detections/
+analysis/synth_eval/v1/events.tsv
+analysis/synth_eval/v2test/detections/
+analysis/synth_eval/v2test/detections_v2/
+analysis/synth_eval/v2test/detections_v2b/
+analysis/synth_eval/*/audible.tsv
+models/call_detector_v2.pt
+models/call_detector_v2b.pt

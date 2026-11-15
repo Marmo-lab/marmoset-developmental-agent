@@ -191,7 +191,7 @@ class PreprocessingConfig:
     # [ours] 0.05 s for the learned detector, which only drops stray runs; its short false
     # alarms are flagged later (merge_calls.py, short_low_conf). [ours] No ceiling for it (None):
     # an 8 s ceiling silently dropped 202 calls of 8-28 s in 140 h of busy day audio, at
-    # confidence 0.97-0.99 and SNR 25-40 dB (2026-11-02 audit, SESSION_STATE); they are
+    # confidence 0.97-0.99 and SNR 25-40 dB (audit of 2026-11-02); they are
     # flagged ``long`` in merge_calls.py instead.
     min_call_duration_s: float = 0.05
     max_call_duration_s: Optional[float] = None
@@ -201,7 +201,7 @@ class PreprocessingConfig:
     # training chunks are cut from (io/channels.py). Detection: strategy is second-order
     # (DETECTOR_EVAL finding 6) and the held-out test was scored on "mean". Training audio:
     # "ambisonic_beam" steers a virtual cardioid at the loudest direction per chunk, +2.45 dB
-    # call-band dynamic range over "mean" by day (SESSION_STATE finding 9), so the calls
+    # call-band dynamic range over "mean" by day (tools/explorations/channel_eval.py), so the calls
     # the agent hears stand further above the room. :meth:`talia` uses "mean" for both,
     # which is what librosa's mono mixdown did in her pipeline.
     detection_channel_strategy: ChannelStrategy = "mean"
@@ -217,7 +217,7 @@ class PreprocessingConfig:
 
     # --- call catalogue and call audio [ours] ------------------------------------ #
     # Since 2026-10-22 the product is individual calls with exact wall-clock times, not
-    # 10 s chunks (SESSION_STATE). Call audio is cut from the training channel at
+    # 10 s chunks (a decision of 2026-10-22). Call audio is cut from the training channel at
     # call_audio_sample_rate: the native 48 kHz, so nothing is lost before the encoder's
     # rate is chosen (32 kHz keeps a median 96% of call energy, 16 kHz 35%). Each call is
     # stored with call_audio_margin_s of context on both sides; the catalogue keeps the

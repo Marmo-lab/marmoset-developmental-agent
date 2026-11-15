@@ -13,7 +13,7 @@ raised partway through the campaign, the noise floor and the peak rise together 
 while the stationary floor does not, so `DR` climbs.
 
 Usage:
-    python tools/analysis/aggregate_levels.py <dir-of-jsons>
+    python tools/explorations/aggregate_levels.py <dir-of-jsons>
 """
 
 from __future__ import annotations

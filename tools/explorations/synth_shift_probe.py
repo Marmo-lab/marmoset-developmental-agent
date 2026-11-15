@@ -17,7 +17,7 @@ when shifted down, it is both frequency and the calls' short sweeping shape. Res
 Writes one row per planted call: type, version, snr, max_p, mean_p, peak_hz, dur_s.
 
 Usage (local or on a compute node; reads raw audio only):
-    python tools/analysis/synth_shift_probe.py DONORS BACKGROUND_AUDIO_DIR OUT.tsv
+    python tools/explorations/synth_shift_probe.py DONORS BACKGROUND_AUDIO_DIR OUT.tsv
 """
 
 from __future__ import annotations

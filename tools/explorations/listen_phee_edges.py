@@ -18,7 +18,7 @@ caller's channel (as ``score_phee.score_exp`` counts them):
   unclear), kept in the browser and saved with "save" as ``phee_edges_verdicts.json``.
 
 Usage (where the experiment audio is, i.e. the cluster; writes only under OUT):
-    python tools/analysis/listen_phee_edges.py $WORK_DIR/phee_score OUT [--n 20] [--seed 0]
+    python tools/explorations/listen_phee_edges.py $WORK_DIR/phee_score OUT [--n 20] [--seed 0]
 """
 
 from __future__ import annotations

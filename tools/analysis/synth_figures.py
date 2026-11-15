@@ -2,7 +2,7 @@
 
 The folder holds what ``tools/synth/score.py`` reads (``recordings.tsv``, ``events.tsv``,
 ``detections/``), its ``scores.json``, and the frequency-shift probe of
-``tools/analysis/synth_shift_probe.py`` (``shift_probe.tsv``). All figures use the front-end
+``tools/explorations/synth_shift_probe.py`` (``shift_probe.tsv``). All figures use the front-end
 view (``short_low_conf`` detections removed: what reaches the training set) and the main
 matching of ``score.py`` (IoU >= 0.5; phee, twitter and trill by any overlap).
 

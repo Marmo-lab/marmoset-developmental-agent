@@ -178,7 +178,7 @@ Of the 665 noises clear of every call, a detection fired on 7% of the cage noise
 
 ## 4. Detections at recording-file edges (checked 2026-11-15)
 **What was seen.** Picking calls for a figure, many of the strongest detections ended exactly at a recording file's end.
-`tools/analysis/file_edges.py` ran on v5, results in `analysis/file_edges/`.
+`tools/explorations/file_edges.py` ran on v5, results in `analysis/file_edges/`.
 
 **How many.**
 

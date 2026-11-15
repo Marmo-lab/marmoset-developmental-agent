@@ -1,10 +1,10 @@
-"""tools/analysis/find_noise_events.py: loud events away from run calls, suspect detections, a varied selection."""
+"""tools/explorations/find_noise_events.py: loud events away from run calls, suspect detections, a varied selection."""
 
 from __future__ import annotations
 
 import numpy as np
 
-import tools.analysis.find_noise_events as fne
+import tools.explorations.find_noise_events as fne
 
 SR = fne.SR
 

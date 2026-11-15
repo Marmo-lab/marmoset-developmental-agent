@@ -54,7 +54,7 @@ non-phee calls (chirp, alarm) fail IoU. By type at +20 dB: phees and loud shrill
 chirps are found but cut short or split).
 
 ### Why the short high calls are missed (probe, 2026-11-05)
-`tools/analysis/synth_shift_probe.py` (`figures/synth_v1_frequency_shift.png`): every donor planted alone in 20 s of night background at +20 and +6 dB; the
+`tools/explorations/synth_shift_probe.py` (`figures/synth_v1_frequency_shift.png`): every donor planted alone in 20 s of night background at +20 and +6 dB; the
 detector's maximum call probability inside the call.
 - **Hand labels.** Of 761 labels (calibration, held-out, test), none is both shorter than
   0.2 s and peaked above 12 kHz (5-20 kHz band). 7 are shorter than 0.2 s, 6 peak above
@@ -70,7 +70,7 @@ detector's maximum call probability inside the call.
   them) or rarely does. Not separable from the labels alone.
 
 ### Search for short high calls in our recordings (2026-11-05)
-`tools/analysis/find_short_high.py`: a plain energy rule, independent of the learned detector
+`tools/explorations/find_short_high.py`: a plain energy rule, independent of the learned detector
 (11.5-20 kHz at least 15 dB above its median and 8 dB above the call band, 0.03-0.5 s).
 Selftest on v1 (+20 / +6 dB): it finds tsik 0.68 / 0.65, tsik-ek 0.93 / 0.80, seep 0.81 /
 0.74, twitter 0.46 / 0.21, every other type at most 0.11, and no false alarm on the night
@@ -170,7 +170,7 @@ beyond the bootstrap intervals. The test set has no label under 0.18 s. Producti
 
 ### Planted colony noise (2026-11-10)
 SYNTH_EVAL step 3, redesigned with the user: real colony noises added to make the synthetic minutes more like the
-colony, not a paired robustness test. `tools/analysis/find_noise_events.py` (80 v5 recordings, 81 h) found 462 loud
+colony, not a paired robustness test. `tools/explorations/find_noise_events.py` (80 v5 recordings, 81 h) found 462 loud
 non-call events per hour; the user named 105 of a varied sample: cage 65, call 24 (missed by v2a), discard 8,
 human 4, door 2, beep 1. `tools/synth/plant_noise.py` cut the 37 held-out-half noises (cage 33, human 3, door 1;
 no beep, so beeps are not planted) and added them to the 300 v2test minutes at SNR 1.5: type by the heard shares,

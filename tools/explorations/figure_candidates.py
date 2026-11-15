@@ -14,7 +14,7 @@ the 4-capsule mean (what the detector hears), ``PAD_S`` on each side.
 
 Writes OUT/review.json, OUT/items.tsv, OUT/clips/<call_id>.flac.
 
-Usage: python tools/analysis/figure_candidates.py RUN OUT
+Usage: python tools/explorations/figure_candidates.py RUN OUT
 """
 
 from __future__ import annotations

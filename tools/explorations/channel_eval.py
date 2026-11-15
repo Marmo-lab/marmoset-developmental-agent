@@ -18,8 +18,8 @@ dynamic range is computed on the per-frame maximum across capsules, the envelope
 union effectively sees.
 
 Usage:
-    python tools/analysis/channel_eval.py run <raw.wav> --json-out out.json
-    python tools/analysis/channel_eval.py aggregate <dir-of-jsons>
+    python tools/explorations/channel_eval.py run <raw.wav> --json-out out.json
+    python tools/explorations/channel_eval.py aggregate <dir-of-jsons>
 """
 
 from __future__ import annotations

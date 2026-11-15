@@ -14,4 +14,4 @@ from in `data/` and the command that redraws it. Large or regenerable run output
 
 - `presence_table_v2a.png`: that table drawn in the paper layout. Redraw: `python tools/analysis/presence_table_figure.py`
 
-- `repertoire_v5.png/.pdf`: six calls the user picked from v5 detections (original audio): waveform (1 kHz high-pass), spectrogram, detection. Redraw: `python tools/analysis/repertoire_figure.py DIR figures/repertoire_v5 --ids ...` with DIR = `$WORK_DIR/figure_candidates` (ids and picks in `analysis/repertoire_figure/`)
+- `repertoire_v5.png/.pdf`: six calls the user picked from v5 detections (original audio): waveform (1 kHz high-pass), spectrogram, detection. Redraw: `python tools/explorations/repertoire_figure.py DIR figures/repertoire_v5 --ids ...` with DIR = `$WORK_DIR/figure_candidates` (ids and picks in `analysis/repertoire_figure/`)

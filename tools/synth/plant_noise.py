@@ -2,7 +2,7 @@
 
 What it is for. The synthetic held-out set plants calls into quiet night background. A real colony
 minute also holds non-call sounds; the user heard and named a sample of them
-(``tools/analysis/find_noise_events.py``, the library's ``/review`` page): about 90% cage rattles and
+(``tools/explorations/find_noise_events.py``, the library's ``/review`` page): about 90% cage rattles and
 scratches, a few people, doors and beeps. This module adds such noises to the synthetic recordings, at
 their real level and in the proportions heard, so the detector is scored on minutes that sound more like
 the colony [ours, approved by the user 2026-11-10]. The scoring is the usual one (``tools/synth/score.py``,

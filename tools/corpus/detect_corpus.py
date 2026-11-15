@@ -16,7 +16,7 @@ each task gets a similar mix of busy days and quiet nights) and, per recording, 
     ``audio_offset_s`` / ``audio_duration_s`` locate each call's audio in the file and
     ``audio_lead_s`` is how far before the call's ``start_s`` that audio begins. One file per
     recording, not per call: ~1.8 M small files would strain the shared file system, which
-    allocates 2.3x the size of small files (SESSION_STATE, v2_day).
+    allocates 2.3x the size of small files (measured on the v2_day run).
 ``chunks/<recording_id>/`` (only with ``--export-audio``)
     The 16 kHz training chunks as WAVs, plus ``chunks.tsv``. The GmSLM-style product,
     superseded on 2026-10-22 by individual calls; kept for the comparison arm.

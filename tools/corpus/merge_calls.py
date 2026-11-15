@@ -1,6 +1,6 @@
 """Merge a corpus run's per-recording call catalogues into one chronological call corpus.
 
-The product since 2026-10-22 is individual calls with exact wall-clock times (SESSION_STATE).
+The product since 2026-10-22 is individual calls with exact wall-clock times.
 ``detect_corpus.py --export-calls`` writes ``calls/<recording_id>.csv`` and
 ``call_audio/<recording_id>.flac`` per recording, in whatever order the array tasks ran.
 This step builds, in place and without copying audio:

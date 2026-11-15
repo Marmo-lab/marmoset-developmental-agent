@@ -18,7 +18,7 @@ Writes a review folder for the library's ``/review`` page (``call_library.py --r
 clip seconds) and ``clips/<item_id>.flac``.
 
 Usage:
-    python tools/analysis/merge_review.py A_CV.json B_CV.json OUT [--names base v2] [--work WORK_DIR]
+    python tools/explorations/merge_review.py A_CV.json B_CV.json OUT [--names base v2] [--work WORK_DIR]
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import soundfile as sf
 
-from tools.analysis import find_short_high as fsh
+from tools.explorations import find_short_high as fsh
 from tools.analysis.train_call_detector import hand_sets
 
 PAD_S = 0.6

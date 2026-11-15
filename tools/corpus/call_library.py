@@ -18,7 +18,7 @@ with verdicts in ``DIR/bg_feedback.jsonl``.
 ``--synth DIR`` adds ``/synth``: a set of synthetic recordings of ``tools/synth/generate.py``
 (the minute, its spectrogram with the planted calls marked), with verdicts in ``DIR/synth_feedback.jsonl``.
 
-``--short-high DIR`` adds ``/short_high``: candidates of ``tools/analysis/find_short_high.py`` (a 2 s
+``--short-high DIR`` adds ``/short_high``: candidates of ``tools/explorations/find_short_high.py`` (a 2 s
 clip around each, its spectrogram, played at normal and half speed), with verdicts in
 ``DIR/short_high_feedback.jsonl``.
 
@@ -28,7 +28,7 @@ speed. Files are read from their bytes (``recording_qc.pcm_view``), so a file th
 plays too. ``--raw-qc DIR`` (the ``recording_qc.py`` output for that folder) adds an overview of the
 call-band level over the whole folder, to jump to activity.
 
-``--review DIR`` adds ``/review``: a generic listening review (e.g. ``tools/analysis/merge_review.py``):
+``--review DIR`` adds ``/review``: a generic listening review (e.g. ``tools/explorations/merge_review.py``):
 ``review.json`` (title, intro, answer options), ``items.tsv`` (``item_id``, any info columns,
 ``marks`` as JSON ``[[start_s, end_s, kind, label], ...]`` in clip seconds) and
 ``clips/<item_id>.flac``; verdicts in ``DIR/review_feedback.jsonl``. The server also runs
@@ -247,7 +247,7 @@ class SynthSet:
 
 
 class ShortHigh:
-    """Candidates of ``tools/analysis/find_short_high.py``: ``candidates.tsv`` and ``clips/<cand_id>.flac``."""
+    """Candidates of ``tools/explorations/find_short_high.py``: ``candidates.tsv`` and ``clips/<cand_id>.flac``."""
 
     def __init__(self, folder: Path) -> None:
         self.folder = folder
@@ -752,7 +752,7 @@ def main() -> None:
     ap.add_argument("--donors", type=Path, help="donor-call folder of tools/synth/donor_calls.py, served at /donors")
     ap.add_argument("--backgrounds", type=Path, help="folder of tools/synth/backgrounds.py, served at /backgrounds")
     ap.add_argument("--synth", type=Path, help="a set of tools/synth/generate.py, served at /synth")
-    ap.add_argument("--short-high", type=Path, help="folder of tools/analysis/find_short_high.py, served at /short_high")
+    ap.add_argument("--short-high", type=Path, help="folder of tools/explorations/find_short_high.py, served at /short_high")
     ap.add_argument("--review", type=Path, help="a review folder (review.json, items.tsv, clips/), served at /review")
     ap.add_argument("--raw", type=Path, help="a raw recording folder (Rec_*), served at /raw")
     ap.add_argument("--raw-qc", type=Path, help="recording_qc.py output for --raw: the activity overview")

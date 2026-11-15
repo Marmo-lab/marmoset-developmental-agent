@@ -7,7 +7,7 @@ averaged. Our own ``dataset_builder`` reproduced that by accident. Averaging cap
 that see a directional source at different delays comb-filters the signal while the
 uncorrelated noise between them simply adds, so the mixdown can cost real SNR.
 
-Measured on 54 recordings (one per folder, `tools/analysis/level_audit.py`): the best
+Measured on 54 recordings (one per folder, `tools/explorations/level_audit.py`): the best
 single capsule yields more surviving spectral bins than the 4-capsule mean in 32/54
 files and fewer in none, median gain 3.05x. So ``mean`` is a baseline to beat, not a
 sensible default -- hence this module, and the ablation it enables.
@@ -22,7 +22,7 @@ capsule's axis, that cardioid capsule has gain 1, but the mean of the four has g
 filtering. A detector with an *absolute* threshold therefore favours single-capsule
 strategies partly through gain alone. Compare strategies with gain-invariant measures
 (peak-to-floor dynamic range, a level-relative detector); see
-``tools/analysis/channel_eval.py``.
+``tools/explorations/channel_eval.py``.
 """
 
 from __future__ import annotations

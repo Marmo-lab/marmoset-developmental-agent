@@ -22,7 +22,7 @@ later). Two pools [ours]:
 Recordings: ``N_RECORDINGS`` drawn from the whole run (day and night, seeded), each tagged
 with its ``generate.half`` half, so planted noises can later come from the held-out half only.
 
-Steps (on the cluster, tools/cluster/noise_events.sbatch):
+Steps (on the cluster, tools/explorations/cluster/noise_events.sbatch):
 * ``scan RUN OUT`` (array): ``scan/<recording_id>.tsv``, every candidate of both pools.
 * ``select RUN OUT [--n 300]``: a varied listening set: ``loud`` candidates stratified by peak
   frequency x duration (strongest first in each cell, at most ``PER_RECORDING`` per recording),
@@ -30,8 +30,8 @@ Steps (on the cluster, tools/cluster/noise_events.sbatch):
   (``review.json``, ``items.tsv``, ``clips/``) and ``summary.json`` (counts per hour).
 
 Usage:
-    python tools/analysis/find_noise_events.py scan RUN OUT [--task-index I --n-tasks N]
-    python tools/analysis/find_noise_events.py select RUN OUT [--n 300]
+    python tools/explorations/find_noise_events.py scan RUN OUT [--task-index I --n-tasks N]
+    python tools/explorations/find_noise_events.py select RUN OUT [--n 300]
 """
 
 from __future__ import annotations

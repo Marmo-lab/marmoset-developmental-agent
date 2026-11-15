@@ -2,7 +2,7 @@
 # Print the status and (when ready) the results of the level-audit array job.
 # Safe to run repeatedly; does nothing destructive.
 #
-#   cd ~/marmoset-developmental-agent && bash tools/cluster/show_levels.sh [JOBID]
+#   cd ~/marmoset-developmental-agent && bash tools/explorations/cluster/show_levels.sh [JOBID]
 #
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
@@ -25,7 +25,7 @@ fi
 
 if [ "$N_DONE" -gt 0 ]; then
     echo
-    python tools/analysis/aggregate_levels.py "$WORK_DIR/analysis"
+    python tools/explorations/aggregate_levels.py "$WORK_DIR/analysis"
 else
     echo "No results yet -- nothing to aggregate."
 fi
