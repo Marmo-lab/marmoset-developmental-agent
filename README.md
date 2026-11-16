@@ -1,6 +1,6 @@
 # Marmoset Developmental Agent
 
-An unsupervised developmental model of marmoset vocal learning (Omer lab, ELSC × Hasson lab, Princeton). A learned
+An unsupervised developmental model of marmoset vocal learning (Omer lab, ELSC). A learned
 call detector finds the calls in ~2,700 hours of raw 4-channel colony recordings. An agent with an audio encoder and a
 unit language model then learns from them day by day, following the Hasson "First 1000 Days" framework.
 
