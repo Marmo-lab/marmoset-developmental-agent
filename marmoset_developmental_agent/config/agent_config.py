@@ -153,10 +153,13 @@ class PreprocessingConfig:
     # the detection signal high-passed at highpass_cutoff_hz, 1 kHz in :meth:`learned`.
     # 1024 / 480 at 48 kHz = 21 ms window, 10 ms hop; 250 Hz bands up to Nyquist. These
     # must match the checkpoint, which was trained with exactly these values.
-    # v2a since 2026-11-08 (user): retrained with synthetic and real short high calls, gaps between
-    # real calls taught as background; confirmed once on the blind test set (docs/SYNTH_EVAL.md,
-    # docs/TEST_PROTOCOL.md addendum). v1 (hand labels only) stays in models/ for comparison.
-    learned_model_path: str = "models/call_detector_v2a.pt"  # [ours] relative to the repo root
+    # v3 since 2026-11-17 (user): v2a's recipe plus the user's hand-labelled short calls from our own
+    # colony (train_call_detector.py --short), because v2a missed many short high calls (tsik, seep).
+    # Why it replaced v2a: it passed all six criteria fixed before training (docs/DETECTOR_V3.md): on
+    # held-out short calls it catches 0.68 against 0.42, while hand-label CV, night false alarms and
+    # the blind test set (docs/TEST_PROTOCOL.md, addendum 2026-11-17) stay as good as v2a.
+    # v2a (2026-11-08) and v1 (hand labels only) stay in models/ for comparison.
+    learned_model_path: str = "models/call_detector_v3.pt"  # [ours] relative to the repo root
     learned_threshold: float = 0.5  # [ours]
     learned_n_fft: int = 1024  # [ours]
     learned_hop_length: int = 480  # [ours]

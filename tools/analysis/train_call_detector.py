@@ -32,8 +32,18 @@ short high call (tsik, tsik-ek, seep), and the detector misses them (docs/SYNTH_
   merges on the hand labels rose from 5% to 13% (docs/SYNTH_EVAL.md, v2). The lower bound is
   the hand labels' own convention (labels closer than 0.1 s were merged at import, so a wider
   gap is a real separation; 0.05 s leaves a margin for the rule's approximate bounds).
-Each batch draws ``--mix`` (synthetic, real) of its crops from these sources and the rest from
-the hand clips, so the 45 labelled minutes keep half the weight. ``cv`` folds the hand clips
+* ``--short DIR`` (user, 2026-11-17): short calls labelled by hand on the library's review page
+  (``tools/labels/short_call_candidates.py``). Each item is a candidate of the energy rule, mostly
+  ones v2a missed; the user answered call / not a call / unsure and set a call's edges by clicking.
+  Only the ``--short-half`` (default ``train``) recordings are used: the other half is the test of
+  whether a retrained model catches real short calls. Per item, a window of the raw recording
+  (the labelling clip plus ``SHORT_CONTEXT_S`` on each side, longer than one crop) is taught as:
+  the labelled call 1; for "not a call", the rule's candidate span 0; everything else ignored. The
+  clip often holds 2-5 further calls nobody marked, and the user left the call's echo tail out of
+  its edges, so neither may be taught as background. ``unsure`` items are not used.
+  ``--short-frac F`` keeps a fixed random share of the items (the learning curve).
+Each batch draws ``--mix`` (synthetic, real, short) of its crops from these sources and the rest
+from the hand clips, so the 45 labelled minutes keep half the weight. ``cv`` folds the hand clips
 only; the extra sources are in every fold's training set.
 
 On the cluster (``tools/cluster/train_detector.sbatch``): ``--work WORK_DIR`` reads the same
@@ -83,6 +93,10 @@ CLIP_S = 60.0
 CROP = 400  # frames, 4 s at 10 ms
 EDGE_SIGMA_FRAMES = 2.0  # onset / offset targets: Gaussian bumps of sd 20 ms on the labelled edges
 REAL_GAP_S = (0.05, 1.0)  # [ours] gaps between real positives taught as background with --real-gaps
+# [ours] Audio read on each side of a 2 s labelling clip for --short: a 4.4 s window, so a 4 s crop always fits and the
+# network (receptive field 0.17 s, then a bidirectional GRU over the whole crop) sees real context around the call.
+SHORT_CONTEXT_S = 1.2
+SHORT_CLIP_S = 2.0  # length of the labelling clips (short_call_candidates.CLIP_S)
 EDGE_POS_WEIGHT = 9.0  # edge frames are rare; weight loss terms by 1 + 9 * target
 
 Clip = Dict[str, np.ndarray]
@@ -203,9 +217,75 @@ def load_real(cfg: PreprocessingConfig, folder: Path, gaps: bool = False) -> Dic
     return out
 
 
+def _last_verdicts(path: Path) -> Dict[str, Dict]:
+    """The last answer per item of a review page's ``review_feedback.jsonl``.
+
+    The page appends one line per click, so an item answered twice has two lines and the later one is the user's
+    final word. An empty verdict with no note means the user cleared the item (as ``call_library._read_feedback``,
+    repeated here so training does not import the web server)."""
+    out: Dict[str, Dict] = {}
+    for line in path.read_text().splitlines():
+        d = json.loads(line)
+        if d.get("verdict") is None and not d.get("note"):
+            out.pop(d["item_id"], None)
+        else:
+            out[d["item_id"]] = d
+    return out
+
+
+def load_short(cfg: PreprocessingConfig, folder: Path, half: str = "train", frac: float = 1.0,
+               seed: int = 0) -> Dict[str, Clip]:
+    """Hand-labelled short calls as clips (see ``--short`` in the module docstring).
+
+    ``folder`` is a ``short_call_candidates.py`` review folder: ``meta.tsv`` (where each clip sits in its raw
+    recording, and which half its recording is in), ``items.tsv`` (the rule's candidate span) and the user's
+    ``review_feedback.jsonl``."""
+    import soundfile as sf
+    meta = {r["item_id"]: r for r in csv.DictReader(open(folder / "meta.tsv"), delimiter="\t")}
+    items = {r["item_id"]: r for r in csv.DictReader(open(folder / "items.tsv"), delimiter="\t")}
+    fb = _last_verdicts(folder / "review_feedback.jsonl")
+    # A call is usable only with its edges (the page records them on two clicks); "not a call" needs none; "unsure"
+    # carries no answer either way, so teaching it as either class would be guessing.
+    use = sorted(k for k, v in fb.items() if meta[k]["half"] == half
+                 and (v["verdict"] == "not" or (v["verdict"] == "call" and v.get("bounds"))))
+    if frac < 1.0:
+        # The learning curve: a fixed random share, drawn once per seed, so the 25% items are inside the 50% ones
+        # only by chance. Sorted after drawing, so the order of loading does not depend on the draw.
+        keep = np.random.default_rng(seed).permutation(len(use))[:round(frac * len(use))]
+        use = sorted(use[i] for i in keep)
+    out: Dict[str, Clip] = {}
+    for k in use:
+        m, v = meta[k], fb[k]
+        with sf.SoundFile(m["file_path"]) as f:
+            sr = f.samplerate
+            s = max(0, int(round((float(m["clip_start_s"]) - SHORT_CONTEXT_S) * sr)))
+            f.seek(s)
+            # The 4-capsule mean, as everything the detector hears (load_real's minutes were saved the same way).
+            x = f.read(int(round((SHORT_CLIP_S + 2 * SHORT_CONTEXT_S) * sr)), dtype="float32", always_2d=True).mean(axis=1)
+        feats, t = _features(x, sr, cfg)
+        # Frame times in labelling-clip seconds: the page's bounds and the candidate's marks are in that frame.
+        t = t - (float(m["clip_start_s"]) - s / sr)
+        y = np.full(len(t), -1, np.float32)                       # -1 = ignored by the masked loss
+        if v["verdict"] == "call":
+            a, b = v["bounds"]
+            y[(t >= a) & (t <= b)] = 1
+        else:
+            # "Not a call": the user heard the rule's candidate and judged it no call, so its span is background.
+            # This is the most useful negative there is: exactly what v2a rightly skipped and a model taught only
+            # positives might start to catch.
+            a, b = json.loads(items[k]["marks"])[0][:2]
+            y[(t >= a) & (t <= b)] = 0
+        if len(t) < CROP or not (y >= 0).any():                   # a clip at the very end of its file
+            continue
+        ign = np.full(len(t), -1, np.float32)                     # no edge targets: the edge heads are not used
+        out[f"short:{k}"] = {"x": feats, "y": np.stack([y, ign, ign.copy()]), "t": t, "day": np.int64(-1),
+                             "lead": np.float64(0), "pos": np.flatnonzero(y >= 0)}
+    return out
+
+
 def _crop_start(c: Clip, rng: np.random.Generator) -> int:
     n = c["x"].shape[1]
-    if "pos" in c:                                    # centre a crop of a real minute on a positive frame
+    if "pos" in c:                                    # centre a crop of a real minute (or a short item) on a supervised frame
         return int(np.clip(c["pos"][rng.integers(len(c["pos"]))] - rng.integers(CROP // 4, 3 * CROP // 4), 0, n - CROP))
     return int(rng.integers(0, n - CROP))
 
@@ -263,25 +343,30 @@ def to_calls(prob: np.ndarray, clip: Clip, cfg: PreprocessingConfig) -> List[Tup
             for c in activity_to_calls(act, cfg) if c.end_s - lead > 0 and c.start_s - lead < CLIP_S]
 
 
-def load_extra(cfg: PreprocessingConfig, synth: List[Path], real: List[Path], mix: Tuple[float, float],
-               real_gaps: bool = False) -> Tuple[Dict[str, Clip], Tuple[Tuple[List[str], float], ...]]:
+def load_extra(cfg: PreprocessingConfig, synth: List[Path], real: List[Path], mix: Tuple[float, ...],
+               real_gaps: bool = False, short: List[Path] = (), short_frac: float = 1.0
+               ) -> Tuple[Dict[str, Clip], Tuple[Tuple[List[str], float], ...]]:
+    """The extra sources and their share of each batch: ``mix`` = (synthetic, real, short); a missing share is 0."""
+    mix = tuple(mix) + (0.0,) * (3 - len(mix))
     clips: Dict[str, Clip] = {}
     groups = []
-    for dirs, loader, share in ((synth, load_synth, mix[0]), (real, lambda c, d: load_real(c, d, real_gaps), mix[1])):
+    for name, dirs, loader, share in (("synthetic", synth, load_synth, mix[0]),
+                                      ("real", real, lambda c, d: load_real(c, d, real_gaps), mix[1]),
+                                      ("short", short, lambda c, d: load_short(c, d, frac=short_frac), mix[2])):
         got: Dict[str, Clip] = {}
         for d in dirs:
             got.update(loader(cfg, d))
         clips.update(got)
         groups.append((sorted(got), share))
         if dirs:
-            print(f"{'synthetic' if loader is load_synth else 'real'}: {len(got)} clips, {share:.0%} of each batch", flush=True)
+            print(f"{name}: {len(got)} clips, {share:.0%} of each batch", flush=True)
     return clips, tuple(groups)
 
 
 def cv(cfg: PreprocessingConfig, out: Path, folds: int, steps: int, n_out: int = 3,
-       synth: List[Path] = (), real: List[Path] = (), mix: Tuple[float, float] = (0.25, 0.25),
+       synth: List[Path] = (), real: List[Path] = (), mix: Tuple[float, ...] = (0.25, 0.25),
        sets: Tuple[Tuple[str, str, str], ...] = SETS, only: Optional[int] = None, merge: bool = False,
-       real_gaps: bool = False) -> None:
+       real_gaps: bool = False, short: List[Path] = (), short_frac: float = 1.0) -> None:
     """All folds, or (``only``) one fold to ``fold_K.npz``, or (``merge``) join the fold files."""
     clips = load_clips(cfg, sets)
     ids = sorted(clips, key=lambda c: (int(clips[c]["day"]), c))
@@ -292,7 +377,7 @@ def cv(cfg: PreprocessingConfig, out: Path, folds: int, steps: int, n_out: int =
         for k in range(folds):
             probs.update(dict(np.load(out / f"fold_{k}.npz")))
     else:
-        more, extra = load_extra(cfg, list(synth), list(real), mix, real_gaps)
+        more, extra = load_extra(cfg, list(synth), list(real), mix, real_gaps, list(short), short_frac)
         clips.update(more)
         t0 = time.time()
         for k, test in enumerate(groups):
@@ -315,13 +400,16 @@ def cv(cfg: PreprocessingConfig, out: Path, folds: int, steps: int, n_out: int =
 
 
 def fit(cfg: PreprocessingConfig, out: Path, steps: int, n_out: int = 3,
-        synth: List[Path] = (), real: List[Path] = (), mix: Tuple[float, float] = (0.25, 0.25),
-        sets: Tuple[Tuple[str, str, str], ...] = SETS, real_gaps: bool = False) -> None:
+        synth: List[Path] = (), real: List[Path] = (), mix: Tuple[float, ...] = (0.25, 0.25),
+        sets: Tuple[Tuple[str, str, str], ...] = SETS, real_gaps: bool = False, short: List[Path] = (),
+        short_frac: float = 1.0, seed: int = 0) -> None:
+    """One model on all hand clips plus the extra sources. ``seed`` (default 0, as every model so far) also draws
+    the ``short_frac`` subset; a second seed of the same recipe shows how far one run's result moves by chance."""
     clips = load_clips(cfg, sets)
     ids = sorted(clips)
-    more, extra = load_extra(cfg, list(synth), list(real), mix, real_gaps)
+    more, extra = load_extra(cfg, list(synth), list(real), mix, real_gaps, list(short), short_frac)
     clips.update(more)
-    net = train(clips, ids, steps, seed=0, n_out=n_out, extra=extra)
+    net = train(clips, ids, steps, seed=seed, n_out=n_out, extra=extra)
     out.parent.mkdir(parents=True, exist_ok=True)
     save_call_detector(net, out)
     print(f"wrote {out}")
@@ -405,9 +493,13 @@ def main() -> None:
     for p_ in (c, f):
         p_.add_argument("--synth", type=Path, action="append", default=[], help="synthetic set (generate.py --half train)")
         p_.add_argument("--real", type=Path, action="append", default=[], help="find_short_high.py minutes folder")
-        p_.add_argument("--mix", default="0.25,0.25", help="share of each batch from synthetic, real")
+        p_.add_argument("--mix", default="0.25,0.25", help="share of each batch from synthetic, real[, short]")
         p_.add_argument("--work", type=Path, help="read the hand clips from the cluster's WORK_DIR layout")
         p_.add_argument("--real-gaps", action="store_true", help="teach short gaps between real positives as background")
+        p_.add_argument("--short", type=Path, action="append", default=[],
+                        help="short_call_candidates.py review folder with the user's labels")
+        p_.add_argument("--short-frac", type=float, default=1.0, help="share of the short items used (learning curve)")
+    f.add_argument("--seed", type=int, default=0, help="training seed (and the --short-frac draw)")
     c.add_argument("--fold", type=int, help="train and score only this fold (writes fold_K.npz)")
     c.add_argument("--merge", action="store_true", help="join fold_K.npz files into the cv outputs")
     e = sub.add_parser("evaluate")
@@ -422,9 +514,10 @@ def main() -> None:
     mix = tuple(float(v) for v in a.mix.split(","))
     sets = hand_sets(a.work)
     if a.cmd == "cv":
-        cv(cfg, Path(a.out), a.folds, a.steps, a.heads, a.synth, a.real, mix, sets, a.fold, a.merge, a.real_gaps)
+        cv(cfg, Path(a.out), a.folds, a.steps, a.heads, a.synth, a.real, mix, sets, a.fold, a.merge, a.real_gaps,
+           a.short, a.short_frac)
     else:
-        fit(cfg, Path(a.out), a.steps, a.heads, a.synth, a.real, mix, sets, a.real_gaps)
+        fit(cfg, Path(a.out), a.steps, a.heads, a.synth, a.real, mix, sets, a.real_gaps, a.short, a.short_frac, a.seed)
 
 
 if __name__ == "__main__":

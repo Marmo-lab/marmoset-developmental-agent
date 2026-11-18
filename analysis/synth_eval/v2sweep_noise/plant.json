@@ -1,0 +1,19 @@
+{
+ "source": "/ems/elsc-labs/omer-d/zvi.marmor/marmoset_work/synth/sets/v2sweep",
+ "levels": [
+  1.5,
+  1.4,
+  1.3,
+  1.2,
+  1.1,
+  1.0
+ ],
+ "seed": 0,
+ "noises_per_min": 7.0,
+ "shares": {
+  "cage": 0.9154929577464789,
+  "door": 0.02816901408450704,
+  "human": 0.05633802816901408
+ },
+ "fade_s": 0.01
+}

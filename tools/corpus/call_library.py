@@ -452,9 +452,19 @@ def _read_feedback(path: Path, key: str) -> Dict[str, Dict]:
     return out
 
 
+def _bounds(b: object) -> Optional[List[float]]:
+    """``[start_s, end_s]`` set by clicks on a review page (``edit_bounds``), or None if absent or malformed."""
+    try:
+        a, e = (float(v) for v in b)  # type: ignore[union-attr]
+    except (TypeError, ValueError):
+        return None
+    return [round(a, 3), round(e, 3)] if 0 <= a < e and np.isfinite(e) else None
+
+
 def _append_feedback(path: Path, lock: threading.Lock, key: str, d: Dict) -> None:
+    bounds = _bounds(d.get("bounds"))
     d = {key: d[key], "verdict": d.get("verdict"), "note": d.get("note", ""),
-         "time": dt.datetime.now().isoformat(timespec="seconds")}
+         **({"bounds": bounds} if bounds else {}), "time": dt.datetime.now().isoformat(timespec="seconds")}
     with lock, open(path, "a") as f:
         f.write(json.dumps(d, ensure_ascii=False) + "\n")
 

@@ -84,3 +84,37 @@ bootstrap interval over clips:
   rules above).
 - Divergence: under the current default configuration the `rule (reference)` row runs the learned v1 (the default
   detector changed after the frozen commit), so it duplicates v1 and is not a rule-detector result.
+
+## Addendum, 2026-11-17: scoring v3 once (written before scoring)
+
+**Why the set is used again.** The addendum above spent the test set on the v1 / v2a choice and asked for new clips
+for any later model. The user decided (2026-11-17) to use it once more, as the last of six criteria fixed before
+training v3, not to choose between candidates. Its limits for this question are stated in advance: it holds no label
+shorter than 0.18 s, so it cannot show v3's purpose (short calls); it checks only that nothing else broke. v2a's
+result on it is already known, so this is a second look, and is reported as such.
+
+**Model.** `call_detector_v3.pt` (`$WORK_DIR/detector/v3/`), sha256 prefix `17573e57657bb9ba`: v2a's recipe plus the
+user's short-call labels from the train half of `short_call_candidates` (`train_call_detector.py fit --short`, mix
+0.20 / 0.15 / 0.15, seed 0), named the candidate before any result. Checked before scoring: none of its 74 labelled
+source files is one of the 11 the test clips come from (`short_call_candidates.excluded_paths` leaves them out); three
+recording dates are shared (210807, 210909, 211005), in other files. Criteria 1-5 were read before this scoring
+(`analysis/detector_v3/`): 1, 3, 4 hold; 2 (3 of 57 rejected candidates fired on, against 1) and 5 (synthetic
+accurate-bounds recall 1-2 points lower without noise) are within or near their intervals.
+
+**What runs.** `score_testset.py` from the current tree, v2a and v3, both label modes, both views, the same metrics
+and bootstrap. **Rule.** v3 is confirmed if no score is worse than v2a's beyond the intervals; otherwise the decision
+returns to the user. Score once, report everything, change nothing in response.
+
+**Result (scored once, 2026-11-17; `analysis/detector_v3/testset/`).** `c` labels, all 15 clips, ± half the 95%
+bootstrap interval over clips:
+
+| | P | R | F1 | R@IoU.5 | time R | one-to-one | edges ≤ 50 ms | onset / offset |
+|---|---|---|---|---|---|---|---|---|
+| v2a | 0.91±0.08 | 0.94±0.04 | 0.92±0.04 | 0.82±0.08 | 0.87±0.05 | 0.78 | 0.47 | 17 / 48 ms |
+| v3 | 0.90±0.09 | 0.95±0.03 | 0.93±0.04 | 0.84±0.06 | 0.88±0.04 | 0.79 | 0.48 | 17 / 47 ms |
+
+- v2a reproduces its 2026-11-08 scoring exactly, so the code path is unchanged.
+- **v3 is confirmed** by the rule above: no score is worse beyond the intervals (293 detections against 295). The
+  largest change is the dense series ts_07: recall 0.83 → 0.91, one-to-one 0.52 → 0.65. With `c+?` labels the two
+  are equal within 0.02 everywhere.
+- As stated in advance, this set has no label under 0.18 s; v3's gain on short calls rests on criterion 1.

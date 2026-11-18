@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -79,6 +80,48 @@ def test_one_fold_then_merge_equals_the_files(tmp_path: Path, cfg: Preprocessing
     tcd.cv(cfg, tmp_path, folds=2, steps=2, n_out=1, merge=True)
     assert sorted(np.load(tmp_path / "oof_probs.npz").files) == ["c0", "c1", "c2", "c3"]
     assert (tmp_path / "learned_detections.json").exists()
+
+
+def _short_folder(tmp_path: Path, rng: np.random.Generator) -> Path:
+    """A review folder of four items in one raw 4-capsule file: a train call, a train "not a call", a train
+    "unsure" and a test-half call."""
+    raw = tmp_path / "rec.wav"
+    sf.write(raw, (0.01 * rng.standard_normal((30 * SR, 4))).astype(np.float32), SR)
+    (tmp_path / "meta.tsv").write_text("item_id\tfile_path\tclip_start_s\thalf\n" + "".join(
+        f"{k}\t{raw}\t{start}\t{half}\n" for k, start, half in
+        (("sc_000", 5.0, "train"), ("sc_001", 10.0, "train"), ("sc_002", 15.0, "train"), ("sc_003", 20.0, "test"))))
+    marks = '[[0.95, 1.05, "a", "candidate"]]'
+    (tmp_path / "items.tsv").write_text("item_id\tclip_s\tmarks\n" + "".join(f"sc_00{k}\t2.0\t{marks}\n" for k in range(4)))
+    lines = [{"item_id": "sc_000", "verdict": "call", "note": "", "bounds": [0.9, 1.2]},
+             {"item_id": "sc_001", "verdict": "call", "note": "", "bounds": [0.5, 0.6]},
+             {"item_id": "sc_001", "verdict": "not", "note": ""},          # changed answer: the last one counts
+             {"item_id": "sc_002", "verdict": "unsure", "note": ""},
+             {"item_id": "sc_003", "verdict": "call", "note": "", "bounds": [0.9, 1.1]}]
+    (tmp_path / "review_feedback.jsonl").write_text("".join(json.dumps(d) + "\n" for d in lines))
+    return tmp_path
+
+
+def test_short_labels_teach_the_call_and_the_rejected_candidate_only(tmp_path: Path, cfg: PreprocessingConfig) -> None:
+    clips = tcd.load_short(cfg, _short_folder(tmp_path, np.random.default_rng(6)))
+    assert sorted(clips) == ["short:sc_000", "short:sc_001"]           # unsure and the test half stay out
+    call, rejected = clips["short:sc_000"], clips["short:sc_001"]
+    t, y = call["t"], call["y"][0]
+    assert (y[(t > 0.92) & (t < 1.18)] == 1).all() and (y[(t < 0.85) | (t > 1.25)] == -1).all()
+    assert set(np.unique(rejected["y"][0])) == {-1.0, 0.0}             # its old "call" answer is gone
+    assert (rejected["y"][0][(t > 0.97) & (t < 1.03)] == 0).all() and (rejected["y"][1:] == -1).all()
+    assert len(t) >= tcd.CROP
+    starts = [tcd._crop_start(call, np.random.default_rng(k)) for k in range(30)]
+    assert all(s <= call["pos"][0] < s + tcd.CROP for s in starts)
+    assert sorted(tcd.load_short(cfg, tmp_path, half="test")) == ["short:sc_003"]
+    assert len(tcd.load_short(cfg, tmp_path, frac=0.5)) == 1
+
+
+def test_mix_of_three_sources_pads_missing_shares(tmp_path: Path, cfg: PreprocessingConfig) -> None:
+    folder = _short_folder(tmp_path, np.random.default_rng(7))
+    clips, groups = tcd.load_extra(cfg, [], [], (0.2, 0.15, 0.15), short=[folder])
+    assert [round(w, 2) for _, w in groups] == [0.2, 0.15, 0.15] and groups[2][0] == ["short:sc_000", "short:sc_001"]
+    _, groups = tcd.load_extra(cfg, [], [], (0.25, 0.25))
+    assert len(groups) == 3 and groups[2] == ([], 0.0)
 
 
 def test_real_gaps_between_positives_are_taught_as_background(tmp_path: Path, cfg: PreprocessingConfig) -> None:

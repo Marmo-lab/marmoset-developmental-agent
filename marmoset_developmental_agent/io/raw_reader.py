@@ -34,6 +34,18 @@ from marmoset_developmental_agent.io.channels import ChannelStrategy, combine, p
 # The format every genuine colony recording has (Zoom H3-VR A-format ambisonic).
 EXPECTED_SAMPLE_RATE = 48_000
 EXPECTED_CHANNELS = 4
+# Rates a colony recording may come at [ours, user 2026-11-17]. The 2021 corpus is all 48 kHz;
+# the folder Rec_2026_11_8-10 is the same recorder and capsule order set to 96 kHz. Accepting
+# 96 kHz needs no conversion of the files: nothing downstream of this reader works at the
+# native rate. The stream resamples each block to ``detection_sample_rate`` (48 kHz) before
+# any feature, and the call audio and the training chunks to their own rates
+# (``streaming.detection_activity``, ``read_call_audio``, ``read_chunks``), with polyphase
+# anti-aliased resampling. 96 -> 48 kHz is an exact 1:2 decimation, and what its low-pass
+# removes lies above 24 kHz, while the calls are at 5-20 kHz. Times stay right because every
+# offset is computed from the file's own ``sample_rate``. Any other rate is still rejected:
+# a rate we have not checked is more likely a foreign instrument (the 250 kHz folder below)
+# than a colony file, and should fail loudly rather than run.
+ACCEPTED_SAMPLE_RATES = (EXPECTED_SAMPLE_RATE, 96_000)
 
 # bext layout, EBU Tech 3285: Description 256B, Originator 32B, OriginatorReference 32B,
 # then OriginationDate (10B, "yyyy-mm-dd") and OriginationTime (8B, "hh:mm:ss").
@@ -109,8 +121,8 @@ def probe(path: Union[str, Path]) -> RawFileInfo:
         return RawFileInfo(path, 0, 0, "", 0, None, False, f"unreadable: {exc}")
 
     reasons = []
-    if info.samplerate != EXPECTED_SAMPLE_RATE:
-        reasons.append(f"sample rate {info.samplerate} != {EXPECTED_SAMPLE_RATE}")
+    if info.samplerate not in ACCEPTED_SAMPLE_RATES:
+        reasons.append(f"sample rate {info.samplerate} not in {ACCEPTED_SAMPLE_RATES}")
     if info.channels != EXPECTED_CHANNELS:
         reasons.append(f"{info.channels} channels != {EXPECTED_CHANNELS}")
     if info.frames <= 0:

@@ -18,7 +18,7 @@ run_pipeline.py                 CLI orchestrating stages 1-7
 config/default.yaml             production config (provenance-tagged); gmslm_arm.yaml = Talia's front-end (PreprocessingConfig.talia())
 marmoset_developmental_agent/
   config/agent_config.py        all dataclasses; AgentConfig.mock() = tiny CPU config; load_config/save_config (unknown YAML keys raise)
-  io/                           raw_reader (bext timestamps, probe, streaming 4-ch blocks), channels (5 channel strategies)
+  io/                           raw_reader (bext timestamps, probe: 48 or 96 kHz, streaming 4-ch blocks), channels (5 channel strategies)
   preprocessing/                filter_5khz (HPF + frame activity) -> segmentation (calls, night window, chunk plans, 10 s Chunk)
                                 -> streaming (blocked detection over a file, CallRecord catalogue, chunk audio) -> dataset_builder (ChronologicalDataset, F(d))
   encoders/                     BaseAudioEncoder ABC; MarmosetHuBERTEncoder (frozen, k-means); DinoSREncoder (trainable, EMA teacher, online codebooks)
@@ -30,11 +30,12 @@ marmoset_developmental_agent/
 tools/
   build_manifest.py, sweep_units.py
   analysis/                     verify_talia_port (the port gate), score_detectors, train_call_detector,
-                                score_testset, score_phee (detector evaluation); synth_figures, presence_table(_figure),
+                                score_testset, score_phee, score_short_labels (detector evaluation); synth_figures, presence_table(_figure),
                                 real_snr (synthetic evaluation); calls_per_hour, call_map, call_inventory, recording_qc
   explorations/                 one-off investigations whose results the docs cite (its README lists each);
                                 cluster/ holds their jobs
-  labels/                       make_clips, make_guide, import_audacity, review_labels, phone_server (hand-label workflow, see LABELING.md)
+  labels/                       make_clips, make_guide, import_audacity, review_labels, phone_server (hand-label workflow, see LABELING.md);
+                                short_call_candidates (short calls v2a missed, labelled with edges on the review page)
   corpus/                       the production path, in order: detect_corpus (array job: per-recording call
                                 catalogue + call audio) -> merge_calls (chronological calls.tsv / calls_train.tsv)
                                 -> clean_corpus (spectrally cleaned call audio); call_library (browser over a run);
@@ -45,7 +46,7 @@ tools/
   cluster/                      env.sh, setup_env.sh, *.sbatch (ELSC SLURM jobs)
 analysis/                       results worth keeping, small, with what produced them (analysis/README.md)
 figures/                        figures worth keeping, with their data and redraw command (figures/README.md)
-docs/                           ROADMAP, OPEN_DECISIONS, DETECTOR_EVAL, DETECTOR_V2A_SCORES, TEST_PROTOCOL, SYNTH_METHODS,
+docs/                           ROADMAP, OPEN_DECISIONS, DETECTOR_EVAL, DETECTOR_V2A_SCORES, DETECTOR_V3, TEST_PROTOCOL, SYNTH_METHODS,
                                 SYNTH_EVAL, LABELING, CODEMAP; audit/ = GmSLM code audit
 data/labels/                    hand labels (calibration: handlabels.csv, held-out: heldout_labels.csv, blind test: test_labels.csv)
 references/                     git-ignored, read-only: upstream clones, Talia's code mirror, audit file index, her output sample

@@ -107,6 +107,44 @@ def test_probe_rejects_the_ultrasonic_format(tmp_path):
     assert "sample rate" in i.reason and "channels" in i.reason and "bext" in i.reason
 
 
+def test_probe_accepts_the_96khz_colony_format(tmp_path):
+    """Rec_2026_11_8-10: the same recorder at 96 kHz. Accepted, and its duration comes from its own rate."""
+    p = _write_wav(tmp_path / "261108_001.WAV", np.zeros((2 * 96_000, EXPECTED_CHANNELS), np.float32), sr=96_000,
+                   when=dt.datetime(2026, 11, 8, 15, 30, 0))
+    i = probe(p)
+    assert i.ok and i.sample_rate == 96_000
+    assert i.duration_s == pytest.approx(2.0, abs=0.01)
+
+
+def test_96khz_and_48khz_recordings_detect_alike():
+    """The production detector on one recording at 96 kHz and on its 1:2 decimation gives the same calls.
+
+    Three synthetic frequency sweeps (0.15-1.2 s, 6.5-12 kHz) in 4-capsule noise; the default (learned) detector must
+    find them, so the comparison is not between two empty lists."""
+    from scipy.signal import resample_poly
+
+    from marmoset_developmental_agent.config.agent_config import load_config
+    from marmoset_developmental_agent.preprocessing.streaming import ArraySource, detect_recording
+
+    sr = 96_000
+    t = np.arange(20 * sr) / sr
+    x = 0.003 * np.random.default_rng(0).standard_normal((len(t), EXPECTED_CHANNELS))
+    for t0, f0, f1, d in ((4.0, 7000, 9000, 0.6), (9.0, 8000, 12000, 0.15), (14.0, 6500, 7500, 1.2)):
+        m = (t >= t0) & (t < t0 + d)
+        u = t[m] - t0
+        x[m] += (0.1 * np.sin(np.pi * u / d) ** 0.5 * np.sin(2 * np.pi * (f0 * u + (f1 - f0) * u ** 2 / (2 * d))))[:, None]
+    x96 = x.astype(np.float32)
+    x48 = resample_poly(x96, 1, 2, axis=0).astype(np.float32)
+    cfg = load_config().preprocessing
+    when = dt.datetime(2026, 11, 9, 12, 0, 0)
+    a = detect_recording(ArraySource(x96, 96_000), when, cfg)
+    b = detect_recording(ArraySource(x48, 48_000), when, cfg)
+    assert len(a) == len(b) == 3
+    for c96, c48 in zip(a, b):
+        assert abs(c96.start_s - c48.start_s) <= 0.01 and abs(c96.end_s - c48.end_s) <= 0.01
+        assert abs(c96.confidence - c48.confidence) <= 0.01
+
+
 def test_probe_never_raises_on_garbage(tmp_path):
     p = tmp_path / "broken.WAV"
     p.write_bytes(b"\x00" * 64)

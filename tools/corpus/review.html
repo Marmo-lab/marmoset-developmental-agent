@@ -26,6 +26,11 @@ main{padding:14px max(16px,2vw);display:grid;grid-template-columns:repeat(auto-f
 .c{background:var(--card);border:1px solid var(--rule);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:6px}
 .meta{display:flex;flex-wrap:wrap;gap:2px 12px;font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums}
 .c img{width:100%;display:block;border-radius:4px;background:var(--bg)}
+.sp{position:relative}
+.sp.edit img{cursor:crosshair}
+.bnd{position:absolute;top:0;bottom:0;background:rgba(235,104,52,.22);border-inline:2px solid #eb6834;pointer-events:none;display:none}
+.pin{position:absolute;top:0;bottom:0;width:0;border-left:2px dashed #eb6834;pointer-events:none;display:none}
+.btxt{font-size:.78rem;color:var(--muted);font-variant-numeric:tabular-nums}
 .play{display:flex;gap:6px}
 button{font:inherit;cursor:pointer;border:1px solid var(--rule);background:var(--bg);color:var(--ink);border-radius:5px;padding:2px 9px;font-size:.82rem}
 .verdicts{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
@@ -50,8 +55,10 @@ code{font-family:var(--mono);font-size:.8em;direction:ltr;unicode-bidi:isolate}
 const T = new URLSearchParams(location.search).get("t") || "";
 const api = (p, q = {}) => `${p}?${new URLSearchParams({...q, t: T})}`;
 const $ = id => document.getElementById(id);
-let rows = [], player = null, OPTIONS = [];
+let rows = [], player = null, OPTIONS = [], EDIT = false;
 const SKIP = new Set(["item_id", "marks", "feedback"]);
+// The server's review spectrogram puts its time axis from 5% to 99% of the image width (call_library._review_png).
+const AX0 = 0.05, AXW = 0.94;
 
 function play(src, rate){
   if (player) player.pause();
@@ -69,31 +76,55 @@ function card(r){
   const info = Object.entries(r).filter(([k]) => !SKIP.has(k)).map(([k, v]) => `<span dir="ltr">${k}: <b>${v}</b></span>`).join("");
   el.innerHTML = `
     <div class="meta"><code>${r.item_id}</code>${info}</div>
-    <img loading="lazy" alt="ספקטרוגרמה של ${r.item_id}" src="${api(`api/review_spec/${r.item_id}`)}">
-    <div class="play"><button type="button" data-r="1">▶ מהירות רגילה</button><button type="button" data-r="0.5">▶ חצי מהירות</button></div>
+    <div class="sp${EDIT ? " edit" : ""}"><img loading="lazy" alt="ספקטרוגרמה של ${r.item_id}" src="${api(`api/review_spec/${r.item_id}`)}"><div class="bnd"></div><div class="pin"></div></div>
+    <div class="play"><button type="button" data-r="1">▶ מהירות רגילה</button><button type="button" data-r="0.5">▶ חצי מהירות</button>
+      ${EDIT ? `<button type="button" class="clr">נקה גבולות</button><span class="btxt"></span>` : ""}</div>
     <div class="verdicts">${OPTIONS.map(([v, l]) => `<button type="button" data-v="${v}">${l}</button>`).join("")}
       <input placeholder="הערה"><span class="saved"></span></div>`;
   const src = api(`api/review_audio/${r.item_id}`);
-  el.querySelectorAll(".play button").forEach(b => b.onclick = () => play(src, +b.dataset.r));
+  el.querySelectorAll(".play button[data-r]").forEach(b => b.onclick = () => play(src, +b.dataset.r));
   const btns = el.querySelectorAll(".verdicts button"), note = el.querySelector(".verdicts input"), saved = el.querySelector(".saved");
   note.value = r.feedback && r.feedback.note || "";
   let cur = r.feedback ? r.feedback.verdict : null;
+  let bounds = r.feedback && r.feedback.bounds || null, pending = null;
   const paint = () => btns.forEach(b => b.classList.toggle("on", b.dataset.v === cur));
+  // Bounds: the first click on the spectrogram pins the start, the second sets the end (either order).
+  const dur = +r.clip_s, sp = el.querySelector(".sp"), bnd = el.querySelector(".bnd"), pin = el.querySelector(".pin");
+  const toX = t => `${(AX0 + AXW * t / dur) * 100}%`;
+  const drawBounds = () => {
+    if (!EDIT) return;
+    bnd.style.display = bounds ? "block" : "none";
+    if (bounds) { bnd.style.left = toX(bounds[0]); bnd.style.width = `${AXW * (bounds[1] - bounds[0]) / dur * 100}%`; }
+    pin.style.display = pending == null ? "none" : "block";
+    if (pending != null) pin.style.left = toX(pending);
+    el.querySelector(".btxt").textContent = bounds ? `גבולות: ${bounds[0].toFixed(3)}–${bounds[1].toFixed(3)} שנ׳` :
+      pending != null ? "לחץ על סוף הקריאה" : "לחץ על תחילת הקריאה";
+  };
   const save = async () => {
     const res = await fetch(api("api/review_feedback"), {method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({item_id: r.item_id, verdict: cur, note: note.value})});
-    r.feedback = {verdict: cur, note: note.value};
+      body: JSON.stringify({item_id: r.item_id, verdict: cur, note: note.value, bounds})});
+    r.feedback = {verdict: cur, note: note.value, bounds};
     saved.textContent = res.ok ? "נשמר" : "השמירה נכשלה: בדוק שהשרת עדיין רץ";
     setTimeout(() => saved.textContent = "", 1500);
     progress();
   };
   btns.forEach(b => b.onclick = () => { cur = cur === b.dataset.v ? null : b.dataset.v; paint(); save(); });
   note.onchange = save;
+  if (EDIT) {
+    sp.querySelector("img").onclick = ev => {
+      const t = Math.min(dur, Math.max(0, ((ev.offsetX / ev.target.clientWidth) - AX0) / AXW * dur));
+      if (pending == null) { pending = t; bounds = null; }
+      else { bounds = [Math.min(pending, t), Math.max(pending, t)]; pending = null; if (!cur) { cur = OPTIONS[0][0]; paint(); } save(); }
+      drawBounds();
+    };
+    el.querySelector(".clr").onclick = () => { bounds = null; pending = null; drawBounds(); save(); };
+  }
   paint();
+  drawBounds();
   return el;
 }
 fetch(api("api/review")).then(r => r.json()).then(d => {
-  rows = d.rows; OPTIONS = d.options;
+  rows = d.rows; OPTIONS = d.options; EDIT = !!d.edit_bounds;
   document.title = d.title; $("title").textContent = d.title; $("intro").textContent = d.intro;
   const names = {label: "תיוג ידני", a: (d.models || [])[0] || "a", b: (d.models || [])[1] || "b"};
   $("legend").innerHTML = Object.entries(d.colors).map(([k, c]) => `<span><i style="background:${c}"></i>${names[k] || k}</span>`).join("");
