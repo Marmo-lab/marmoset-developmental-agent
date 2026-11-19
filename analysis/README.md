@@ -24,3 +24,5 @@ or on the cluster under `$WORK_DIR`.
 Interpretation: `docs/SYNTH_EVAL.md`, results. Method: `docs/SYNTH_METHODS.md`.
 
 - `presence_table/presence_table.json`: segment-level call presence (1 min / 10 s / 1 s) of v2a vs. hand labels, P/R/F1/lift/kappa, in the format of Hasson et al. Table 1. `python tools/analysis/presence_table.py`
+- `detector_v3/`: the six criteria that made v3 production (`docs/DETECTOR_V3.md`): `short_labels/` (held-out short-call labels, `tools/analysis/score_short_labels.py`), `cv_v3/` (hand-label cross-validation), `real/` (rule candidates and night false alarms), `testset/` (blind test, scored once).
+- `v6_check/`: calls per date and hour of the v6 run (detector v3, 2021 and the November 2026 recordings) and of v5, from `tools/analysis/calls_per_hour.py aggregate`; the 2026 rows are the low-gain recordings kept out of v6 (`docs/DETECTOR_V3.md`, corpus v6).

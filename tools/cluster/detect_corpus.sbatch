@@ -11,6 +11,8 @@
 #   RUN=v4_calls sbatch -o ~/marmoset_work/logs/%x-%A_%a.out --array=0-199%24 tools/cluster/detect_corpus.sbatch \
 #       --n-tasks 200 --export-calls
 #   # v3_calls (2026-10-26) was day only with an 8 s ceiling: --config config/corpus_day.yaml on the defaults of then
+#   # v6_calls (2026-11-17): detector v3 on the 2021 corpus and, from MANIFEST, the 96 kHz recordings of November 2026
+#   MANIFEST=~/marmoset_work/manifests/recordings_2026_11.csv RUN=v6_calls sbatch ... --n-tasks 40 --export-calls
 #   # then, on a compute node: merge into calls.tsv, then clean (clean_corpus.sbatch)
 #   python tools/corpus/merge_calls.py $WORK_DIR/corpus/$RUN
 #   # GmSLM comparison arm: --config config/gmslm_arm.yaml --export-audio, then merge_corpus.py
@@ -26,5 +28,5 @@ source "$PROJECT_DIR/tools/cluster/env.sh"
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1  # one core per task
 
 RUN="${RUN:?set RUN=<name>, e.g. RUN=pilot}"
-python "$PROJECT_DIR/tools/corpus/detect_corpus.py" "$WORK_DIR/manifests/recordings.csv" \
+python "$PROJECT_DIR/tools/corpus/detect_corpus.py" "${MANIFEST:-$WORK_DIR/manifests/recordings.csv}" \
     "$WORK_DIR/corpus/$RUN" --task-index "${SLURM_ARRAY_TASK_ID:-0}" "$@"

@@ -84,3 +84,23 @@ with seed 1.
 | synthetic sweep | `analysis/synth_eval/v2sweep*/scores_v3.json` |
 | blind test | `analysis/detector_v3/testset/` |
 | code | `tools/labels/short_call_candidates.py`, `tools/analysis/train_call_detector.py --short`, `tools/analysis/score_short_labels.py` |
+
+## Corpus v6 (2026-11-18)
+
+The production chain (detect, merge) with v3 over the 2021 corpus and the November 2026 recordings
+(`Rec_2026_11_*`, 356 files, 183 h, the same recorder at 96 kHz, which the reader now accepts).
+
+| run | recordings | calls | call hours | day calls / h | night calls / h |
+|---|---|---|---|---|---|
+| v5 (v2a), 2021 | 2,602 | 1,849,363 | | 1,376 | 2.9 |
+| `v6_calls` (v3), 2021 | 2,602 | 1,854,814 | 409 | 1,379 | 2.8 |
+| `v6_2026_lowgain` (v3), 2026 | 356 | 46,081 | 7.7 | 512 | 0.5 |
+
+- On 2021, v3 changes the corpus by +0.3% calls.
+- **The 2026 recordings are kept apart** (user, 2026-11-18). They were recorded at mic gain 1: their level, call and
+  background alike, is about 17-18 dB below 2021 (a one-off comparison of clear phees, not kept as code), and above
+  ~10 kHz the background is the recorder's own flat noise floor. The detector is correct there (listening check of 30
+  detections, `tools/explorations/listen_2026.py`: 25 calls with right edges, 1 with a late onset, 4 unsure, none
+  noise) but less sensitive, so 2026 call counts are not comparable with 2021. The gain is to be recalibrated before
+  further recordings.
+- The cleaning stage has not been run on v6; it waits for the comparison with ridge-based resynthesis.
