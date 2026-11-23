@@ -74,7 +74,7 @@ full-corpus run if you want the short calls.
 | A2 | Copy data to the laptop? | No bulk copy — analyse on the cluster; only small artifacts come back. | 2026-10-14 |
 | A3 | Python environment | venv at `~/venvs/marmoset311` built by `tools/cluster/setup_env.sh`; CPU torch for now, a CUDA build before training. Cluster quirks in `CONVENTIONS.md`, section Cluster. | 2026-10-14 |
 | A4 | Storage | Enough (42 TB free). Outputs in `~/marmoset_work`. | 2026-10-14 |
-| A5 | Git | Yes — `github.com/Zvimarmor/marmoset-developmental-agent`. No Claude co-author lines in commits (history rewritten 2026-10-15). | 2026-10-14 |
+| A5 | Git | Yes — `github.com/Marmo-lab/marmoset-developmental-agent` (moved from the user's account). No co-author lines in commits (history rewritten 2026-10-15). | 2026-10-14 |
 | B6 | Combining the 4 microphone capsules | Implement all five strategies and evaluate. Done: `mean`, `max_energy`, `best_snr`, `per_channel`, `ambisonic_beam` (the planned "ambisonic W" equals `mean`, so a steered-beam option replaced it). Result: ~2 dB better daytime contrast than `mean`; provisional default `ambisonic_beam`. Final choice after labels. | 2026-10-15 |
 | B7 | Ultrasonic folder | Exclude. Already enforced by the reader (rejected on format). | 2026-10-15 |
 | B8 | Reuse Talia's segments or regenerate? | Regenerate everything from raw; her counts are only a cross-check. | 2026-10-15 |

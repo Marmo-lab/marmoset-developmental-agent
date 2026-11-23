@@ -101,6 +101,9 @@ The production chain (detect, merge) with v3 over the 2021 corpus and the Novemb
   background alike, is about 17-18 dB below 2021 (a one-off comparison of clear phees, not kept as code), and above
   ~10 kHz the background is the recorder's own flat noise floor. The detector is correct there (listening check of 30
   detections, `tools/explorations/listen_2026.py`: 25 calls with right edges, 1 with a late onset, 4 unsure, none
-  noise) but less sensitive, so 2026 call counts are not comparable with 2021. The gain is to be recalibrated before
-  further recordings.
+  noise) but less sensitive, so 2026 call counts are not comparable with 2021. Recording levels per file:
+  `analysis/new_recordings_2026_11/levels.png` (`tools/analysis/recording_qc.py`).
+- **Gain recalibrated** (2026-11-23): mic gain 50 (of 1-100) puts the room background within ~1 dB of 2021 and the
+  loudest-sample distribution on 2021's; gain 100 clipped in 2% of 10 s blocks. 50 is the chosen setting; `Rec_2026_11_22-23` is
+  the first recording at it (a one-off level check, not kept as code).
 - The cleaning stage has not been run on v6; it waits for the comparison with ridge-based resynthesis.
