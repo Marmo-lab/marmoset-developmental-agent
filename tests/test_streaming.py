@@ -232,6 +232,14 @@ def test_call_quality_flags_short_low_confidence_and_long_calls():
     assert quality({"duration_s": "28.4", "confidence": "0.30"}) == "long"
 
 
+def test_training_corpus_keeps_every_flagged_call():
+    """Since 2026-11-24 the quality flags are markers only: calls_train.tsv keeps short_low_conf and long calls."""
+    from tools.corpus.merge_calls import TRAIN_EXCLUDES, training
+
+    rows = [{"quality": q} for q in ("ok", "short_low_conf", "long")]
+    assert not TRAIN_EXCLUDES and training(rows) == rows
+
+
 def test_merge_calls_builds_one_chronological_call_corpus(wav, tmp_path):
     """tools/corpus/merge_calls: per-recording catalogues + FLACs -> one calls.tsv in wall-clock
     order, duplicate copies kept once, and read_call returns exactly each catalogued call."""

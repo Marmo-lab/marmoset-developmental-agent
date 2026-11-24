@@ -16,3 +16,7 @@ result can be traced and rerun. None of them is on the production path. Cluster 
 | `figure_candidates.py`, `repertoire_figure.py` | The repertoire figure (`figures/repertoire_v5.png`) | `figures/README.md` |
 | `donor_check.py` | Are the shortest synthetic donors and the trills really calls with the right edges? (a listening page) | every one is a call, but 14 trill donors and `seep_000` have wrong edges (8 are 10 ms clicks from `call_bounds`' loudest-frame fallback); fix pending, `SYNTH_METHODS.md` to follow |
 | `listen_2026.py` | Are the detector's calls on the 96 kHz November 2026 recordings real? (a listening page) | `DETECTOR_V3.md`, corpus v6 |
+| `detector_checks.py` | Are the detector's frame threshold and 250 Hz bands right? (D1, D3, D4) | `PARAMETER_CHECKS.md` |
+| `confidence_review.py` | Do low-confidence and `short_low_conf` calls sound like calls? (a blind listening page; D2, D6) | `PARAMETER_CHECKS.md`; the flag became a marker only |
+| `cleaning_checks.py` | Synthetic vs real noise, how fast calls move in frequency, ridge leakage (C1-C4) | `PARAMETER_CHECKS.md` |
+| `ridge_listen.py` | Ridge resynthesis vs spectral cleaning, by ear (the examples page for Didi, the five-version settings page) | `PARAMETER_CHECKS.md`; ridges 9 dB / 20 ms chosen, spectral cleaning kept |

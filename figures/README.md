@@ -16,3 +16,5 @@ from in `data/` and the command that redraws it. Large or regenerable run output
 - `presence_table_v2a.png`: that table drawn in the paper layout. Redraw: `python tools/analysis/presence_table_figure.py`
 
 - `repertoire_v5.png/.pdf`: six calls the user picked from v5 detections (original audio): waveform (1 kHz high-pass), spectrogram, detection. Redraw: `python tools/explorations/repertoire_figure.py DIR figures/repertoire_v5 --ids ...` with DIR = `$WORK_DIR/figure_candidates` (ids and picks in `analysis/repertoire_figure/`)
+
+- `clean_eval_2026-11-24.png`: spectral subtraction against ridge settings on 550 shadow-filtering mixtures, call preserved against noise left, all calls and three SNR levels (`docs/PARAMETER_CHECKS.md`). Redraw: `python tools/analysis/clean_eval.py report OUT` on the mixtures in `analysis/param_checks/clean_eval_mixtures.jsonl` (one JSON per file under `OUT/mixtures/`)

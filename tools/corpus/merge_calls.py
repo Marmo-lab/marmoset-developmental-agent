@@ -11,11 +11,12 @@ This step builds, in place and without copying audio:
     ``audio_offset_s`` for ``audio_duration_s`` seconds; the call itself starts
     ``audio_lead_s`` into that slice and lasts ``duration_s`` (:func:`read_call`).
 ``calls_train.tsv``
-    The same rows without the calls flagged ``short_low_conf``: the training corpus. Calls
-    flagged ``long`` stay in it.
-    The user chose this rule on 2026-10-25, after a pilot listening check: 96.4% of the
-    pilot's calls and 99.3% of its call time kept, cross-validated P 0.930 -> 0.934, R
-    0.933 -> 0.918.
+    The training corpus: the rows whose quality flag is not in ``TRAIN_EXCLUDES``. Since
+    2026-11-24 that set is empty, so it holds every call; the flags stay in the ``quality``
+    column as markers, for filtering and listening. From 2026-10-25 to 2026-11-24 it left out
+    the calls flagged ``short_low_conf`` (the user's rule after the pilot listening check: 96.4%
+    of the pilot's calls and 99.3% of its call time kept, cross-validated P 0.930 -> 0.934,
+    R 0.933 -> 0.918). Why that stopped: see ``short_low_conf`` below.
 ``calls_summary.json``
     Totals, calls and call-hours per recording date, and the duplicate copies dropped.
 
@@ -25,7 +26,18 @@ listening check of the pilot, 17 of the 20 short or low-confidence calls were "n
 against 0 of 20 random calls. On the labelled clips the same rule removes 12 of 470
 cross-validated detections and lowers recall from 0.933 to 0.918, so some of these are faint
 real calls. They are therefore flagged, not deleted: 3.6% of the pilot's calls, 0.7% of its
-call time. Training excludes them by default.
+call time.
+
+The flag is a marker only since 2026-11-24 (user). That pilot check was made with the first
+learned detector. Detector v3 was then trained on hand-labelled short calls from our colony
+(docs/DETECTOR_V3.md), and the short, low-confidence calls it finds are mostly real: in the
+user's blind listening of v6 day calls (``tools/explorations/confidence_review.py``), 20 of 30
+flagged calls were calls, 8 unsure and 2 not calls. The cut does not separate calls from noise
+either: of 17 short calls just above it (confidence 0.6-0.7), 10 were calls and 4 not calls. In
+corpus v6 the flag covers about 4.9% of day calls, so excluding it would have dropped roughly two
+real calls for every non-call. The scoring scripts' "front-end view" (``tools/synth/score.py``,
+``score_short_labels.py``, ``score_testset.py``) keeps its old definition, without the flagged
+detections, so earlier scores stay comparable; it no longer equals the training corpus.
 
 ``long`` marks a call of ``LONG_S`` or more [ours, 2026-11-02]. The detector has no length
 ceiling any more: an 8 s ceiling had silently dropped 202 calls of 8-28 s in 140 h of busy day
@@ -62,6 +74,15 @@ FIELDS = ["call_id", "recording_id", "start_time", "duration_s", "start_s", "end
 SHORT_S = 0.18  # [ours] all 17 "not a call" verdicts were 0.11-0.17 s
 LOW_CONF = 0.6  # [ours] ... with confidence 0.48-0.55
 LONG_S = 8.0  # [ours] the ceiling the rule detectors use (PreprocessingConfig.spectral)
+# [ours, user 2026-11-24] Quality flags whose calls calls_train.tsv leaves out. Empty: every flag is a marker only
+# (see the module docstring: with detector v3, most short_low_conf calls are real). Kept as a named set so that
+# excluding a flag again is a one-line, visible change rather than an edit inside merge().
+TRAIN_EXCLUDES: frozenset = frozenset()
+
+
+def training(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """The rows that go into ``calls_train.tsv``: those whose ``quality`` is not in ``TRAIN_EXCLUDES``."""
+    return [r for r in rows if r["quality"] not in TRAIN_EXCLUDES]
 
 
 def quality(row: Dict[str, str]) -> str:
@@ -86,7 +107,8 @@ def merge(out: Path) -> Dict[str, object]:
             rows.append({"call_id": f"{rid}_{k:05d}", "recording_id": rid, "audio_path": f"call_audio/{rid}.flac",
                          "quality": quality(r), "_order": order, **{f: r[f] for f in FIELDS if f in r}})
     rows.sort(key=lambda r: (r["start_time"], r["_order"]))
-    for name, keep in (("calls.tsv", rows), ("calls_train.tsv", [r for r in rows if r["quality"] != "short_low_conf"])):
+    train = training(rows)
+    for name, keep in (("calls.tsv", rows), ("calls_train.tsv", train)):
         with open(out / name, "w", newline="") as fh:
             w = csv.DictWriter(fh, FIELDS, delimiter="\t", extrasaction="ignore")
             w.writeheader()
@@ -101,7 +123,8 @@ def merge(out: Path) -> Dict[str, object]:
         "n_short_low_conf": sum(r["quality"] == "short_low_conf" for r in rows),
         "n_long": sum(r["quality"] == "long" for r in rows),
         "long_call_hours": round(sum(float(r["duration_s"]) for r in rows if r["quality"] == "long") / 3600, 2),
-        "train_call_hours": round(sum(float(r["duration_s"]) for r in rows if r["quality"] != "short_low_conf") / 3600, 2),
+        "n_train": len(train),
+        "train_call_hours": round(sum(float(r["duration_s"]) for r in train) / 3600, 2),
         "n_recordings": len(rids), "duplicates_dropped": dropped,
         "first": rows[0]["start_time"] if rows else None, "last": rows[-1]["start_time"] if rows else None,
         "per_date": {d: {"calls": v[0], "call_hours": round(v[1], 3)} for d, v in sorted(per_date.items())},
